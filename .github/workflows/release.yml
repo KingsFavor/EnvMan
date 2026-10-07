@@ -1,0 +1,232 @@
+name: Release
+
+# Notarized Developer ID build, DMG, GitHub Release, Homebrew Cask bump.
+# Triggered by pushing a version tag (v1.2.3) or manually.
+#
+# Required repository secrets:
+#   MACOS_CERTIFICATE_BASE64    base64 of the "Developer ID Application" .p12
+#   MACOS_CERTIFICATE_PASSWORD  password protecting that .p12
+#   MACOS_SIGN_IDENTITY         full identity, e.g. "Developer ID Application: Name (4S9VPFZ465)"
+#   NOTARY_KEY_ID               App Store Connect API key ID (for notarytool)
+#   NOTARY_ISSUER_ID            App Store Connect API issuer ID
+#   NOTARY_KEY_BASE64           base64 of the App Store Connect API .p8 private key
+#   TAP_GITHUB_TOKEN            PAT with write access to KingsFavor/homebrew-tap
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.1.0). Defaults to the pushed tag."
+        required: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build, notarize and release
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha256: ${{ steps.sha.outputs.sha256 }}
+    env:
+      TEAM_ID: "4S9VPFZ465"
+      SCHEME: "EnvMan"
+      SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          LATEST=$(ls -d /Applications/Xcode_1[6-9]*.app /Applications/Xcode_2*.app 2>/dev/null | sort -V | tail -1 || true)
+          [ -z "$LATEST" ] && LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $LATEST"
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
+
+      - name: Resolve version and build number
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$VERSION" ]; then echo "::error::Could not resolve version"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "Building EnvMan $VERSION (build ${GITHUB_RUN_NUMBER})"
+
+      - name: Import Developer ID signing certificate
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/dev_id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo -n "$MACOS_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          echo "Signing identities available:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Archive (Developer ID)
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project EnvMan.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -archivePath "$RUNNER_TEMP/EnvMan.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp"
+          test -d "$RUNNER_TEMP/EnvMan.xcarchive"
+
+      - name: Export archive
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/EnvMan.xcarchive" \
+            -exportOptionsPlist ExportOptions-developerid.plist \
+            -exportPath "$RUNNER_TEMP/export"
+          test -d "$RUNNER_TEMP/export/EnvMan.app"
+
+      - name: Package DMG
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/export/EnvMan.app"
+          STAGING="$RUNNER_TEMP/dmg-staging"
+          DMG="$RUNNER_TEMP/EnvMan-$VERSION.dmg"
+          rm -rf "$STAGING"; mkdir -p "$STAGING"
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "EnvMan" -srcfolder "$STAGING" \
+            -ov -format UDZO "$DMG"
+          codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/ac_api_key.p8"
+          echo -n "$NOTARY_KEY_BASE64" | base64 --decode -o "$KEY_PATH"
+          xcrun notarytool submit "$DMG" \
+            --key "$KEY_PATH" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -t open --context context:primary-signature -vv "$DMG" || true
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          set -euo pipefail
+          SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "$SHA" > "$RUNNER_TEMP/sha256.txt"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA=$(cat "$RUNNER_TEMP/sha256.txt")
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            echo "### 설치 / Install (Homebrew)"
+            echo '```bash'
+            echo "brew install --cask kingsfavor/tap/envman"
+            echo '```'
+            echo ""
+            echo "### 업데이트 / Update"
+            echo '```bash'
+            echo "brew update && brew upgrade --cask envman"
+            echo '```'
+            echo "그 밖에는 아래 \`EnvMan-${VERSION}.dmg\`를 받아 \`/Applications\`의 앱을 덮어쓰세요."
+            echo ""
+            echo "Notarized Developer ID build, macOS 14+"
+            echo ""
+            echo "**SHA-256:** \`$SHA\`"
+          } > "$NOTES"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "$DMG" --clobber
+            gh release edit "v$VERSION" --notes-file "$NOTES"
+          else
+            gh release create "v$VERSION" "$DMG" \
+              --title "EnvMan $VERSION" \
+              --notes-file "$NOTES"
+          fi
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+  update-homebrew-tap:
+    name: Update Homebrew Cask
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for cask template)
+        uses: actions/checkout@v4
+
+      - name: Render and push cask to tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "TAP_GITHUB_TOKEN not set, skipping Homebrew tap update."
+            exit 0
+          fi
+          if [ -z "${SHA256:-}" ]; then
+            echo "::error::Missing sha256 from build job"; exit 1
+          fi
+          sed -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__SHA256__|${SHA256}|g" \
+              .github/templates/envman.rb > /tmp/envman.rb
+          echo "Rendered cask:"; cat /tmp/envman.rb
+
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/KingsFavor/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp /tmp/envman.rb tap/Casks/envman.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/envman.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date."
+            exit 0
+          fi
+          git commit -m "envman ${VERSION}"
+          git push
