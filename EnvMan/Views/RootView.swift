@@ -69,6 +69,13 @@ struct RootView: View {
                 .buttonStyle(SecondaryButtonStyle())
                 Spacer()
                 LockBadge(store: store)
+                if store.isUnlocked {
+                    Button { store.lock() } label: {
+                        Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .help("지금 잠그기")
+                }
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape").font(.system(size: 12, weight: .semibold))
                 }
