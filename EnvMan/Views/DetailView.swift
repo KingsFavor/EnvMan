@@ -171,7 +171,7 @@ struct DetailView: View {
     private var emptyNamespace: some View {
         VStack(spacing: 0) {
             Spacer()
-            Image("BrandMark").renderingMode(.template).resizable().frame(width: 64, height: 64).foregroundStyle(t.ink3).opacity(0.7).padding(.bottom, 18)
+            Image("BrandMark").resizable().interpolation(.high).scaledToFit().frame(width: 72, height: 72).opacity(0.9).padding(.bottom, 16)
             Text("아직 시크릿이 없습니다").font(.sans(15, .semibold)).foregroundStyle(t.ink)
             Text("키를 하나씩 추가하거나, .env 파일 내용을 붙여넣어 한 번에 가져오세요.")
                 .font(.sans(13)).foregroundStyle(t.ink2).multilineTextAlignment(.center).lineSpacing(2).frame(width: 320).padding(.top, 6)

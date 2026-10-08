@@ -58,8 +58,8 @@ struct OnboardingView: View {
 
     private var intro: some View {
         VStack(spacing: 0) {
-            Image("BrandMark").renderingMode(.template).resizable().frame(width: 96, height: 96)
-                .foregroundStyle(t.accent).padding(.bottom, 22)
+            Image("BrandMark").resizable().interpolation(.high).scaledToFit().frame(width: 100, height: 100)
+                .padding(.bottom, 20)
             Text("EnvMan").font(.sans(28, .bold)).foregroundStyle(t.ink)
             Text("환경변수와 API 키를 이 Mac 안에 암호화해 보관하고, 필요할 때 바로 복사합니다.")
                 .font(.sans(15)).foregroundStyle(t.ink2).multilineTextAlignment(.center)

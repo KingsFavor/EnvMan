@@ -1,8 +1,7 @@
 {
   "images" : [
-    { "idiom" : "universal", "filename" : "BrandMark@halved.png", "scale" : "1x" },
+    { "idiom" : "universal", "filename" : "BrandMark-1x.png", "scale" : "1x" },
     { "idiom" : "universal", "filename" : "BrandMark.png", "scale" : "2x" }
   ],
-  "info" : { "author" : "xcode", "version" : 1 },
-  "properties" : { "template-rendering-intent" : "template" }
+  "info" : { "author" : "xcode", "version" : 1 }
 }

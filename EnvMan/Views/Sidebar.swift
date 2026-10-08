@@ -25,7 +25,7 @@ struct Sidebar: View {
 
     private var logoRow: some View {
         HStack(spacing: 10) {
-            Image("BrandMark").renderingMode(.template).resizable().frame(width: 30, height: 30).foregroundStyle(t.accent)
+            Image("BrandMark").resizable().interpolation(.high).scaledToFit().frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 Text("EnvMan").font(.sans(13, .bold)).foregroundStyle(t.ink)
                 Text("이 Mac에만 저장됨").font(.sans(11)).foregroundStyle(t.ink3)
