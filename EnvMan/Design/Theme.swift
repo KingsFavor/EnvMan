@@ -107,4 +107,9 @@ extension Font {
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
+    /// Elegant italic serif for the EnvMan wordmark (Didot, a high-contrast display
+    /// serif that ships with macOS). Falls back to the system serif italic.
+    static func wordmark(_ size: CGFloat) -> Font {
+        .custom("Didot-Italic", size: size)
+    }
 }

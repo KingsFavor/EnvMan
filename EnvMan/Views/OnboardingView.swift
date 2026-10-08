@@ -60,10 +60,10 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Image("BrandMark").resizable().interpolation(.high).scaledToFit().frame(width: 100, height: 100)
                 .padding(.bottom, 20)
-            Text("EnvMan").font(.sans(28, .bold)).foregroundStyle(t.ink)
-            Text("환경변수와 API 키를 이 Mac 안에 암호화해 보관하고, 필요할 때 바로 복사합니다.")
+            Text("EnvMan").font(.wordmark(34)).foregroundStyle(t.ink)
+            Text("환경변수와 API 키를 이 Mac 안에 암호화해 보관하고,\n필요할 때 바로 복사합니다.")
                 .font(.sans(15)).foregroundStyle(t.ink2).multilineTextAlignment(.center)
-                .lineSpacing(3).padding(.top, 8).frame(width: 420)
+                .lineSpacing(3).padding(.top, 10).frame(width: 440)
 
             VStack(spacing: 0) {
                 introRow("hard-drive", "이 Mac에만 저장됩니다", "값은 암호화되어 디스크에 남고, 네트워크로 보내지 않습니다.", first: true)
