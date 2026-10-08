@@ -19,6 +19,7 @@ struct EnvManApp: App {
                 .environment(ui)
                 .environment(updates)
                 .frame(minWidth: 900, minHeight: 620)
+                .preferredColorScheme(store.settings.appearance.colorScheme)
                 .task { updates.checkOnLaunch() }
         }
         .defaultSize(width: 1120, height: 760)

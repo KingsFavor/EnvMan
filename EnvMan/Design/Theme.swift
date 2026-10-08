@@ -60,6 +60,26 @@ struct Theme {
     var tlGreen: Color { Color(hex: "#28C840") }
 }
 
+/// App appearance preference: follow the system, or force light/dark.
+enum Appearance: String, CaseIterable {
+    case system, light, dark
+    var label: String {
+        switch self {
+        case .system: return "시스템"
+        case .light: return "라이트"
+        case .dark: return "다크"
+        }
+    }
+    /// nil means follow the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 private struct ThemeKey: EnvironmentKey {
     static let defaultValue = Theme(scheme: .light)
 }

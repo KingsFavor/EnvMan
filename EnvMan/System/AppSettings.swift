@@ -12,6 +12,8 @@ final class AppSettings {
     var lockOnResign: Bool { didSet { d.set(lockOnResign, forKey: K.lockResign) } }
     var lockOnWindowClose: Bool { didSet { d.set(lockOnWindowClose, forKey: K.lockClose) } }
 
+    var appearance: Appearance { didSet { d.set(appearance.rawValue, forKey: K.appearance) } }
+
     static let sessionPresets: [(label: String, seconds: Int)] = [
         ("5분", 300), ("15분", 900), ("30분", 1800), ("1시간", 3600),
     ]
@@ -27,6 +29,7 @@ final class AppSettings {
         static let lockSleep = "lock.onSleep"
         static let lockResign = "lock.onResign"
         static let lockClose = "lock.onWindowClose"
+        static let appearance = "appearance"
     }
 
     init() {
@@ -37,5 +40,6 @@ final class AppSettings {
         lockOnSleep = d.object(forKey: K.lockSleep) as? Bool ?? true
         lockOnResign = d.object(forKey: K.lockResign) as? Bool ?? false
         lockOnWindowClose = d.object(forKey: K.lockClose) as? Bool ?? false
+        appearance = Appearance(rawValue: d.string(forKey: K.appearance) ?? "") ?? .system
     }
 }

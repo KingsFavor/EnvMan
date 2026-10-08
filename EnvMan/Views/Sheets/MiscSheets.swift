@@ -64,6 +64,11 @@ struct SettingsSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    section("모양") {
+                        settingRow("외형", "시스템 설정을 따르거나 라이트, 다크로 고정합니다.") {
+                            Seg(options: Appearance.allCases.map { ($0, $0.label) }, selection: $settings.appearance, height: 24, fontSize: 12).fixedSize()
+                        }
+                    }
                     section("세션과 클립보드") {
                         settingRow("세션 유지 시간", "잠금 해제 후 이 시간이 지나면 자동으로 잠깁니다.") {
                             Seg(options: AppSettings.sessionPresets.map { ($0.seconds, $0.label) }, selection: $settings.sessionSeconds, height: 24, fontSize: 12).fixedSize()
