@@ -236,10 +236,14 @@ struct OnboardingView: View {
                 lucide(icon).font(.system(size: 15)).foregroundStyle(accent ? t.accentText : t.ink2)
                 Text(title).font(.sans(13, .semibold)).foregroundStyle(accent ? t.accentText : t.ink)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(items, id: \.self) { Text($0).font(.sans(13)).foregroundStyle(t.ink2) }
-            }.padding(.top, 14)
-            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(items, id: \.self) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("•").font(.sans(13)).foregroundStyle(accent ? t.accentText : t.ink3)
+                        Text(item).font(.sans(13)).foregroundStyle(t.ink2)
+                    }
+                }
+            }.padding(.top, 12)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
