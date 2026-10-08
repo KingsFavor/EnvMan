@@ -105,6 +105,9 @@ struct Seg<T: Hashable>: View {
                     Text(opt.label)
                         .font(mono ? .mono(fontSize, on ? .semibold : .medium) : .sans(fontSize, on ? .semibold : .medium))
                         .foregroundStyle(on ? t.ink : t.ink3)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity)
                         .frame(height: height)
                         .background(
