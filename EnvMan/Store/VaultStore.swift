@@ -1,31 +1,43 @@
 import Foundation
 import CryptoKit
 import Observation
+import AppKit
 
-/// Owns the vault: loading and saving the device-key-encrypted file, the timed
-/// unlock session that holds the DEK in memory, and all reads and writes.
-///
-/// Locked vs unlocked:
-/// - The list of namespaces and key names is available whenever the file loads
-///   (it is sealed only with the device key, which the app reads automatically).
-/// - Secret *values* need the DEK, which only a master password unlock recovers.
-///   The DEK lives in memory for the session and is dropped on lock.
 @MainActor
 @Observable
 final class VaultStore {
     enum State { case uninitialized, locked, unlocked }
+    enum ConflictPolicy: String, CaseIterable { case overwrite, skip, keepBoth }
+    enum SortMode: String { case keyAsc, recent }
 
-    enum ConflictPolicy { case overwrite, skip, keepBoth }
+    struct Toast: Identifiable {
+        enum Kind { case normal, clip, undo }
+        let id = UUID()
+        var icon: String
+        var title: String
+        var sub: String? = nil
+        var kind: Kind = .normal
+        var clipStart: Date? = nil
+        var clipEnd: Date? = nil
+        var undo: (() -> Void)? = nil
+    }
 
     private(set) var vault: VaultFile?
+    private(set) var sessionStart: Date?
     private(set) var sessionExpiry: Date?
+    /// Updated every second while unlocked, to drive countdowns.
+    private(set) var now: Date = Date()
+    var sortMode: SortMode = .keyAsc
+    var toast: Toast?
     var lastError: String?
 
     let settings: AppSettings
 
     @ObservationIgnored private var dek: SymmetricKey?
     @ObservationIgnored private var deviceKey: SymmetricKey?
-    @ObservationIgnored private var autoLockTask: Task<Void, Never>?
+    @ObservationIgnored private var tickTask: Task<Void, Never>?
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
+    @ObservationIgnored private var deletedBackup: (nsID: UUID, secret: SecretData, index: Int)?
 
     var state: State {
         guard vault != nil else { return .uninitialized }
@@ -36,15 +48,13 @@ final class VaultStore {
     init(settings: AppSettings = AppSettings()) {
         self.settings = settings
         bootstrap()
+        installAutoLockObservers()
     }
 
-    // MARK: Load
+    // MARK: Persistence
 
     private var fileURL: URL {
-        let base = (try? FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        )) ?? FileManager.default.temporaryDirectory
+        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("vault.enc")
     }
 
@@ -52,7 +62,10 @@ final class VaultStore {
         do {
             let key = try DeviceKey.loadOrCreate()
             deviceKey = key
-            guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                seedDemoIfRequested()
+                return
+            }
             let blob = try Data(contentsOf: fileURL)
             let json = try Crypto.open(blob, key: key)
             vault = try JSONDecoder().decode(VaultFile.self, from: json)
@@ -61,41 +74,74 @@ final class VaultStore {
         }
     }
 
-    // MARK: Create, unlock, lock
+    private func persist() throws {
+        guard let deviceKey, let vault else { throw CryptoError.corrupted }
+        let json = try JSONEncoder().encode(vault)
+        try Crypto.seal(json, key: deviceKey).write(to: fileURL, options: .atomic)
+    }
 
-    func createVault(masterPassword: String) throws {
-        guard let deviceKey else { throw CryptoError.corrupted }
-        let salt = try Crypto.randomData(16)
-        let iterations = Crypto.defaultIterations
-        let kek = Crypto.deriveKey(password: masterPassword, salt: salt, iterations: iterations)
+    // MARK: Create, unlock, recovery, lock
+
+    /// Creates the vault and returns the recovery key. Onboarding passes the key it
+    /// already showed the user so display and storage match.
+    @discardableResult
+    func createVault(masterPassword: String, recoveryKey: String? = nil) throws -> String {
+        guard deviceKey != nil else { throw CryptoError.corrupted }
         let dataKey = try Crypto.newKey()
-        let wrapped = try Crypto.seal(dataKey.rawBytes, key: kek)
-        var file = VaultFile(kdf: KDFParams(salt: salt, iterations: iterations), wrappedDEK: wrapped)
-        file.namespaces = []
-        vault = file
+
+        let salt = try Crypto.randomData(16)
+        let kek = Crypto.deriveKey(password: masterPassword, salt: salt, iterations: Crypto.defaultIterations)
+        let wrapped = try Crypto.seal(dataKey.raw, key: kek)
+
+        let recovery = recoveryKey ?? RecoveryKey.generate()
+        let rSalt = try Crypto.randomData(16)
+        let rKey = Crypto.deriveKey(password: RecoveryKey.normalize(recovery), salt: rSalt, iterations: Crypto.defaultIterations)
+        let rWrapped = try Crypto.seal(dataKey.raw, key: rKey)
+
+        vault = VaultFile(
+            kdf: KDFParams(salt: salt, iterations: Crypto.defaultIterations),
+            wrappedDEK: wrapped,
+            recoveryKDF: KDFParams(salt: rSalt, iterations: Crypto.defaultIterations),
+            wrappedDEKRecovery: rWrapped,
+            namespaces: []
+        )
         try persist()
-        _ = deviceKey // silence unused in release paths
         dek = dataKey
         startSession()
+        return recovery
     }
 
     func unlock(masterPassword: String) throws {
         guard let vault else { throw CryptoError.corrupted }
-        let kek = Crypto.deriveKey(
-            password: masterPassword,
-            salt: vault.kdf.salt,
-            iterations: vault.kdf.iterations
-        )
-        let raw = try Crypto.open(vault.wrappedDEK, key: kek) // throws wrongPassword on bad tag
+        let kek = Crypto.deriveKey(password: masterPassword, salt: vault.kdf.salt, iterations: vault.kdf.iterations)
+        let raw = try Crypto.open(vault.wrappedDEK, key: kek)
         dek = SymmetricKey(data: raw)
         startSession()
     }
 
-    func lock() {
-        dek = nil
-        sessionExpiry = nil
-        autoLockTask?.cancel()
-        autoLockTask = nil
+    @discardableResult
+    func resetWithRecoveryKey(_ recoveryKey: String, newPassword: String) throws -> String {
+        guard var vault else { throw CryptoError.corrupted }
+        let rKey = Crypto.deriveKey(password: RecoveryKey.normalize(recoveryKey), salt: vault.recoveryKDF.salt, iterations: vault.recoveryKDF.iterations)
+        let raw = try Crypto.open(vault.wrappedDEKRecovery, key: rKey)
+        let dataKey = SymmetricKey(data: raw)
+
+        let salt = try Crypto.randomData(16)
+        let kek = Crypto.deriveKey(password: newPassword, salt: salt, iterations: Crypto.defaultIterations)
+        vault.kdf = KDFParams(salt: salt, iterations: Crypto.defaultIterations)
+        vault.wrappedDEK = try Crypto.seal(dataKey.raw, key: kek)
+
+        let newRecovery = RecoveryKey.generate()
+        let rSalt = try Crypto.randomData(16)
+        let newRKey = Crypto.deriveKey(password: RecoveryKey.normalize(newRecovery), salt: rSalt, iterations: Crypto.defaultIterations)
+        vault.recoveryKDF = KDFParams(salt: rSalt, iterations: Crypto.defaultIterations)
+        vault.wrappedDEKRecovery = try Crypto.seal(dataKey.raw, key: newRKey)
+
+        self.vault = vault
+        try persist()
+        dek = dataKey
+        startSession()
+        return newRecovery
     }
 
     func changeMasterPassword(current: String, new: String) throws {
@@ -103,49 +149,104 @@ final class VaultStore {
         let oldKEK = Crypto.deriveKey(password: current, salt: vault.kdf.salt, iterations: vault.kdf.iterations)
         let raw = try Crypto.open(vault.wrappedDEK, key: oldKEK)
         let salt = try Crypto.randomData(16)
-        let iterations = Crypto.defaultIterations
-        let newKEK = Crypto.deriveKey(password: new, salt: salt, iterations: iterations)
-        vault.kdf = KDFParams(salt: salt, iterations: iterations)
-        vault.wrappedDEK = try Crypto.seal(Data(raw), key: newKEK)
+        let kek = Crypto.deriveKey(password: new, salt: salt, iterations: Crypto.defaultIterations)
+        vault.kdf = KDFParams(salt: salt, iterations: Crypto.defaultIterations)
+        vault.wrappedDEK = try Crypto.seal(Data(raw), key: kek)
         self.vault = vault
         try persist()
     }
 
+    @discardableResult
+    func reissueRecoveryKey(masterPassword: String) throws -> String {
+        guard var vault else { throw CryptoError.corrupted }
+        let kek = Crypto.deriveKey(password: masterPassword, salt: vault.kdf.salt, iterations: vault.kdf.iterations)
+        let raw = try Crypto.open(vault.wrappedDEK, key: kek)
+        let recovery = RecoveryKey.generate()
+        let rSalt = try Crypto.randomData(16)
+        let rKey = Crypto.deriveKey(password: RecoveryKey.normalize(recovery), salt: rSalt, iterations: Crypto.defaultIterations)
+        vault.recoveryKDF = KDFParams(salt: rSalt, iterations: Crypto.defaultIterations)
+        vault.wrappedDEKRecovery = try Crypto.seal(Data(raw), key: rKey)
+        self.vault = vault
+        try persist()
+        return recovery
+    }
+
+    func resetEverything() {
+        lock()
+        vault = nil
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    func lock() {
+        dek = nil
+        sessionStart = nil
+        sessionExpiry = nil
+        tickTask?.cancel(); tickTask = nil
+    }
+
     private func startSession() {
-        sessionExpiry = Date().addingTimeInterval(TimeInterval(settings.sessionSeconds))
-        scheduleAutoLock()
-    }
-
-    /// Extend the session on meaningful activity (copy, reveal).
-    func touchSession() {
-        guard isUnlocked else { return }
-        startSession()
-    }
-
-    private func scheduleAutoLock() {
-        autoLockTask?.cancel()
-        guard let expiry = sessionExpiry else { return }
-        autoLockTask = Task { @MainActor [weak self] in
-            let delay = expiry.timeIntervalSinceNow
-            if delay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        let start = Date()
+        sessionStart = start
+        sessionExpiry = start.addingTimeInterval(TimeInterval(settings.sessionSeconds))
+        now = start
+        tickTask?.cancel()
+        tickTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, self.isUnlocked else { return }
+                self.now = Date()
+                if let exp = self.sessionExpiry, Date() >= exp { self.lock(); return }
             }
-            if Task.isCancelled { return }
-            self?.lock()
         }
     }
 
-    // MARK: Namespace and key names (no session needed)
-
-    func addNamespace(name: String) {
-        guard vault != nil else { return }
-        vault?.namespaces.append(NamespaceData(name: name))
-        try? persist()
+    func touchSession() {
+        guard isUnlocked else { return }
+        let start = Date()
+        sessionStart = start
+        sessionExpiry = start.addingTimeInterval(TimeInterval(settings.sessionSeconds))
     }
 
-    func renameNamespace(id: UUID, to name: String) {
-        guard let i = index(ofNamespace: id) else { return }
-        vault?.namespaces[i].name = name
+    // Session display
+    var sessionRemaining: Int {
+        guard let exp = sessionExpiry else { return 0 }
+        return max(0, Int(exp.timeIntervalSince(now).rounded(.down)))
+    }
+    var sessionText: String { String(format: "%d:%02d", sessionRemaining / 60, sessionRemaining % 60) }
+    var sessionPct: Double {
+        guard let start = sessionStart, let exp = sessionExpiry else { return 0 }
+        let total = exp.timeIntervalSince(start)
+        guard total > 0 else { return 0 }
+        return max(0, min(1, exp.timeIntervalSince(now) / total)) * 100
+    }
+
+    // MARK: Namespaces
+
+    var groupedNamespaces: [(project: String, items: [NamespaceData])] {
+        guard let vault else { return [] }
+        var order: [String] = []
+        var map: [String: [NamespaceData]] = [:]
+        for ns in vault.namespaces {
+            if map[ns.project] == nil { order.append(ns.project) }
+            map[ns.project, default: []].append(ns)
+        }
+        return order.map { ($0, map[$0] ?? []) }
+    }
+
+    func addNamespace(path: String) -> UUID? {
+        let (p, e) = Self.parsePath(path)
+        guard !e.isEmpty || !p.isEmpty else { return nil }
+        let ns = NamespaceData(project: p, env: e)
+        vault?.namespaces.append(ns)
+        try? persist()
+        return ns.id
+    }
+
+    func renameNamespace(id: UUID, path: String) {
+        guard let i = idx(id) else { return }
+        let (p, e) = Self.parsePath(path)
+        vault?.namespaces[i].project = p
+        vault?.namespaces[i].env = e
         vault?.namespaces[i].updated = Date()
         try? persist()
     }
@@ -155,21 +256,29 @@ final class VaultStore {
         try? persist()
     }
 
-    func renameKey(namespaceID: UUID, secretID: UUID, to key: String) {
-        guard let ni = index(ofNamespace: namespaceID),
-              let si = vault?.namespaces[ni].secrets.firstIndex(where: { $0.id == secretID }) else { return }
-        vault?.namespaces[ni].secrets[si].key = key
-        vault?.namespaces[ni].secrets[si].updated = Date()
+    func moveNamespace(id: UUID, by delta: Int) {
+        guard var list = vault?.namespaces, let i = list.firstIndex(where: { $0.id == id }) else { return }
+        let j = i + delta
+        guard j >= 0, j < list.count else { return }
+        list.swapAt(i, j)
+        vault?.namespaces = list
         try? persist()
     }
 
-    func deleteSecret(namespaceID: UUID, secretID: UUID) {
-        guard let ni = index(ofNamespace: namespaceID) else { return }
-        vault?.namespaces[ni].secrets.removeAll { $0.id == secretID }
-        try? persist()
+    static func parsePath(_ path: String) -> (String, String) {
+        let t = path.trimmingCharacters(in: .whitespaces)
+        if let slash = t.firstIndex(of: "/") {
+            let p = String(t[..<slash]).trimmingCharacters(in: .whitespaces)
+            let e = String(t[t.index(after: slash)...]).trimmingCharacters(in: .whitespaces)
+            return (p, e)
+        }
+        return (t, "")
     }
 
-    // MARK: Values (session needed)
+    // MARK: Secrets
+
+    func namespace(_ id: UUID) -> NamespaceData? { vault?.namespaces.first { $0.id == id } }
+    private func idx(_ id: UUID) -> Int? { vault?.namespaces.firstIndex { $0.id == id } }
 
     func reveal(_ secret: SecretData) throws -> String {
         guard let dek else { throw CryptoError.wrongPassword }
@@ -178,98 +287,218 @@ final class VaultStore {
         return String(decoding: plain, as: UTF8.self)
     }
 
-    /// Insert or update a secret's value. Requires an unlocked session.
-    func upsertSecret(namespaceID: UUID, key: String, value: String) throws {
+    func upsert(namespaceID: UUID, key: String, value: String, memo: String) throws {
         guard let dek else { throw CryptoError.wrongPassword }
-        guard let ni = index(ofNamespace: namespaceID) else { return }
+        guard let ni = idx(namespaceID) else { return }
         let sealed = try Crypto.seal(Data(value.utf8), key: dek)
         if let si = vault?.namespaces[ni].secrets.firstIndex(where: { $0.key == key }) {
             vault?.namespaces[ni].secrets[si].value = sealed
+            vault?.namespaces[ni].secrets[si].memo = memo
             vault?.namespaces[ni].secrets[si].updated = Date()
         } else {
-            vault?.namespaces[ni].secrets.append(SecretData(key: key, value: sealed))
+            vault?.namespaces[ni].secrets.append(SecretData(key: key, value: sealed, memo: memo))
         }
         try persist()
     }
 
-    func plainSecrets(namespaceID: UUID, limitedTo ids: Set<UUID>? = nil) throws -> [PlainSecret] {
+    func editSecret(namespaceID: UUID, secretID: UUID, newKey: String, newValue: String, newMemo: String) throws {
         guard let dek else { throw CryptoError.wrongPassword }
-        guard let ni = index(ofNamespace: namespaceID), let vault else { return [] }
-        let secrets = vault.namespaces[ni].secrets.filter { ids == nil || ids!.contains($0.id) }
-        return try secrets.map {
-            let plain = try Crypto.open($0.value, key: dek)
-            return PlainSecret(id: $0.id, key: $0.key, value: String(decoding: plain, as: UTF8.self))
+        guard let ni = idx(namespaceID), let si = vault?.namespaces[ni].secrets.firstIndex(where: { $0.id == secretID }) else { return }
+        vault?.namespaces[ni].secrets[si].key = newKey
+        vault?.namespaces[ni].secrets[si].value = try Crypto.seal(Data(newValue.utf8), key: dek)
+        vault?.namespaces[ni].secrets[si].memo = newMemo
+        vault?.namespaces[ni].secrets[si].updated = Date()
+        try persist()
+    }
+
+    /// Memo is not encrypted, so it can be edited while locked.
+    func setMemo(namespaceID: UUID, secretID: UUID, memo: String) {
+        guard let ni = idx(namespaceID), let si = vault?.namespaces[ni].secrets.firstIndex(where: { $0.id == secretID }) else { return }
+        vault?.namespaces[ni].secrets[si].memo = memo
+        try? persist()
+    }
+
+    func deleteSecret(namespaceID: UUID, secretID: UUID) {
+        guard let ni = idx(namespaceID), let si = vault?.namespaces[ni].secrets.firstIndex(where: { $0.id == secretID }) else { return }
+        let removed = vault!.namespaces[ni].secrets[si]
+        deletedBackup = (namespaceID, removed, si)
+        vault?.namespaces[ni].secrets.remove(at: si)
+        try? persist()
+        showToast(Toast(icon: "trash-2", title: "‘\(removed.key)’ 삭제됨", kind: .undo, undo: { [weak self] in self?.undoDelete() }))
+    }
+
+    private func undoDelete() {
+        guard let b = deletedBackup, let ni = idx(b.nsID) else { return }
+        let i = min(b.index, vault?.namespaces[ni].secrets.count ?? 0)
+        vault?.namespaces[ni].secrets.insert(b.secret, at: i)
+        deletedBackup = nil
+        try? persist()
+        toast = nil
+    }
+
+    func plainSecrets(namespaceID: UUID, ids: Set<UUID>? = nil) throws -> [PlainSecret] {
+        guard let dek, let ni = idx(namespaceID), let vault else { return [] }
+        return try vault.namespaces[ni].secrets
+            .filter { ids == nil || ids!.contains($0.id) }
+            .map { PlainSecret(id: $0.id, key: $0.key, value: String(decoding: try Crypto.open($0.value, key: dek), as: UTF8.self), memo: $0.memo) }
+    }
+
+    // MARK: dotenv paste
+
+    struct ParsedLine: Identifiable { let id = UUID(); let key: String; let value: String; var isDup: Bool }
+
+    func parseDotenv(_ text: String, namespaceID: UUID) -> [ParsedLine] {
+        let existing = Set((namespace(namespaceID)?.secrets ?? []).map { $0.key })
+        var out: [ParsedLine] = []
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            if line.hasPrefix("export ") { line.removeFirst("export ".count) }
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = Self.normalizeKey(String(line[..<eq]))
+            var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
+                value = String(value.dropFirst().dropLast()).replacingOccurrences(of: "\\n", with: "\n")
+            }
+            if key.isEmpty { continue }
+            out.append(ParsedLine(key: key, value: value, isDup: existing.contains(key)))
+        }
+        return out
+    }
+
+    func applyParsed(_ lines: [ParsedLine], namespaceID: UUID, policy: ConflictPolicy) throws {
+        for line in lines {
+            if line.isDup && policy == .skip { continue }
+            let key = (line.isDup && policy == .keepBoth) ? uniqueKey(line.key, namespaceID: namespaceID) : line.key
+            try upsert(namespaceID: namespaceID, key: key, value: line.value, memo: "")
         }
     }
 
-    // MARK: Encrypted export and import
-
-    func exportBundle(namespaceID: UUID, secretIDs: Set<UUID>?, sharePassword: String) throws -> Data {
-        guard let ni = index(ofNamespace: namespaceID), let vault else { throw CryptoError.corrupted }
-        let plains = try plainSecrets(namespaceID: namespaceID, limitedTo: secretIDs)
-        return try ShareBundle.export(
-            namespace: vault.namespaces[ni].name,
-            secrets: plains,
-            password: sharePassword
-        )
+    static func normalizeKey(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespaces).uppercased()
+            .map { ($0.isLetter || $0.isNumber) ? $0 : "_" }.reduce(into: "") { $0.append($1) }
     }
 
-    /// Decrypt a share file. The caller shows the preview, then calls `applyImport`.
+    private func uniqueKey(_ key: String, namespaceID: UUID) -> String {
+        let existing = Set((namespace(namespaceID)?.secrets ?? []).map { $0.key })
+        if !existing.contains(key) { return key }
+        var n = 2
+        while existing.contains("\(key)_\(n)") { n += 1 }
+        return "\(key)_\(n)"
+    }
+
+    // MARK: Share bundle
+
+    func exportBundle(namespaceID: UUID, ids: Set<UUID>?, sharePassword: String) throws -> Data {
+        guard let ns = namespace(namespaceID) else { throw CryptoError.corrupted }
+        return try ShareBundle.export(namespace: ns.path, secrets: plainSecrets(namespaceID: namespaceID, ids: ids), password: sharePassword)
+    }
     func previewImport(fileData: Data, sharePassword: String) throws -> SharePayload {
         try ShareBundle.decrypt(fileData: fileData, password: sharePassword)
     }
-
-    /// Re-encrypt an imported payload with this vault's DEK and merge it. Requires
-    /// an unlocked session.
-    func applyImport(_ payload: SharePayload, into namespaceID: UUID, conflict: ConflictPolicy) throws {
+    func applyImport(_ payload: SharePayload, into namespaceID: UUID, policy: ConflictPolicy) throws {
         guard dek != nil else { throw CryptoError.wrongPassword }
-        guard let ni = index(ofNamespace: namespaceID) else { return }
-        for secret in payload.secrets {
-            let existing = vault?.namespaces[ni].secrets.first { $0.key == secret.key }
-            if existing != nil {
-                switch conflict {
-                case .skip:
-                    continue
-                case .overwrite:
-                    try upsertSecret(namespaceID: namespaceID, key: secret.key, value: secret.value)
-                case .keepBoth:
-                    try upsertSecret(namespaceID: namespaceID, key: uniqueKey(secret.key, in: ni), value: secret.value)
-                }
-            } else {
-                try upsertSecret(namespaceID: namespaceID, key: secret.key, value: secret.value)
+        for s in payload.secrets {
+            let dup = namespace(namespaceID)?.secrets.contains { $0.key == s.key } ?? false
+            if dup && policy == .skip { continue }
+            let key = (dup && policy == .keepBoth) ? uniqueKey(s.key, namespaceID: namespaceID) : s.key
+            try upsert(namespaceID: namespaceID, key: key, value: s.value, memo: "")
+        }
+    }
+
+    // MARK: Clipboard and toast
+
+    func copyToClipboard(_ text: String, title: String, sub: String? = nil) {
+        Clipboard.copy(text, clearAfter: settings.clipboardClearSeconds)
+        if settings.clipboardClearSeconds > 0 {
+            let start = Date()
+            showToast(Toast(icon: "circle-check", title: title, sub: sub, kind: .clip,
+                            clipStart: start, clipEnd: start.addingTimeInterval(TimeInterval(settings.clipboardClearSeconds))),
+                      duration: TimeInterval(settings.clipboardClearSeconds))
+        } else {
+            showToast(Toast(icon: "circle-check", title: title, sub: sub))
+        }
+    }
+
+    func clearClipboardNow() {
+        NSPasteboard.general.clearContents()
+        toast = nil
+    }
+
+    var clipPct: Double {
+        guard let t = toast, let s = t.clipStart, let e = t.clipEnd else { return 0 }
+        let total = e.timeIntervalSince(s)
+        guard total > 0 else { return 0 }
+        return max(0, min(1, e.timeIntervalSince(now) / total)) * 100
+    }
+
+    func showToast(_ t: Toast, duration: TimeInterval = 3.2) {
+        toast = t
+        now = Date()
+        toastTask?.cancel()
+        toastTask = Task { @MainActor [weak self] in
+            // keep ticking so clip progress animates
+            let deadline = Date().addingTimeInterval(duration)
+            while Date() < deadline {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self, self.toast?.id == t.id else { return }
+                self.now = Date()
             }
+            if self?.toast?.id == t.id { self?.toast = nil }
         }
     }
 
-    // MARK: Helpers
+    // MARK: Auto lock
 
-    func namespace(_ id: UUID) -> NamespaceData? {
-        vault?.namespaces.first { $0.id == id }
-    }
-
-    private func index(ofNamespace id: UUID) -> Int? {
-        vault?.namespaces.firstIndex { $0.id == id }
-    }
-
-    private func uniqueKey(_ key: String, in ni: Int) -> String {
-        var candidate = key + "_imported"
-        var n = 2
-        let existing = Set((vault?.namespaces[ni].secrets ?? []).map { $0.key })
-        while existing.contains(candidate) {
-            candidate = "\(key)_imported_\(n)"
-            n += 1
+    private func installAutoLockObservers() {
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; if self.settings.lockOnResign { self.lock() } }
         }
-        return candidate
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; if self.settings.lockOnSleep { self.lock() } }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; if self.settings.lockOnScreenLock { self.lock() } }
+        }
     }
 
-    private func persist() throws {
-        guard let deviceKey, let vault else { throw CryptoError.corrupted }
-        let json = try JSONEncoder().encode(vault)
-        let blob = try Crypto.seal(json, key: deviceKey)
-        try blob.write(to: fileURL, options: .atomic)
+    // MARK: Demo seed (verification only)
+
+    private func seedDemoIfRequested() {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["ENVMAN_DEMO"] == "1", deviceKey != nil else { return }
+        do {
+            let recovery = try createVault(masterPassword: "demo-password")
+            _ = recovery
+            func add(_ p: String, _ e: String, _ pairs: [(String, String, String, Int)]) {
+                guard let id = addNamespace(path: "\(p)/\(e)") else { return }
+                for (k, v, m, _) in pairs { try? upsert(namespaceID: id, key: k, value: v, memo: m) }
+            }
+            // Obviously fake demo values (no real-secret patterns, for local preview only).
+            add("my-api", "production", [
+                ("DATABASE_URL", "postgres://demo:demo@db.example/app", "기본 RDS, 쓰기 가능", 3),
+                ("REDIS_URL", "redis://demo@cache.example:6380", "", 12),
+                ("STRIPE_SECRET_KEY", "demo-stripe-placeholder", "결제, 라이브 키", 1),
+                ("OPENAI_API_KEY", "demo-openai-placeholder", "", 0),
+                ("ACCESS_KEY_ID", "DEMO-ACCESS-KEY-ID", "배포 IAM 사용자", 9),
+            ])
+            add("my-api", "staging", [
+                ("DATABASE_URL", "postgres://demo:demo@db-stg.example/app", "", 2),
+                ("REDIS_URL", "redis://demo@cache-stg.example:6380", "", 2),
+            ])
+            add("web", "production", [
+                ("NEXT_PUBLIC_API_URL", "https://api.example.com", "공개 값", 5),
+                ("SESSION_SECRET", "demo-session-placeholder", "", 5),
+            ])
+        } catch {
+            lastError = "\(error)"
+        }
+        #endif
     }
 }
 
 private extension SymmetricKey {
-    var rawBytes: Data { withUnsafeBytes { Data($0) } }
+    var raw: Data { withUnsafeBytes { Data($0) } }
 }

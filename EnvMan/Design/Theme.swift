@@ -1,51 +1,63 @@
 import SwiftUI
 
-/// One source of truth for color and shape, resolved per color scheme.
-///
-/// Neutral ink on paper surfaces, with a single restrained green accent used only
-/// where the eye must land: the unlock action, the live session badge, the primary
-/// button. Status colors (locked, revealed, warning) are reserved for state, not
-/// decoration, so they keep their meaning.
+/// Exact color and shape tokens from the EnvMan design (light and dark), resolved
+/// per color scheme. Names mirror the design's CSS variables.
 struct Theme {
     let scheme: ColorScheme
     var isDark: Bool { scheme == .dark }
 
-    // MARK: Surfaces
-    var window: Color { isDark ? Color(hex: "#1C1C1E") : Color(hex: "#FBFAF8") }
-    var card: Color { isDark ? Color(hex: "#2A2A2C") : Color(hex: "#FFFFFF") }
-    var cardMuted: Color { isDark ? Color(hex: "#222224") : Color(hex: "#F4F3F0") }
-    var panel: Color { isDark ? Color(hex: "#2A2A2C") : Color(hex: "#F1F0ED") }
-    var panelStrong: Color { isDark ? Color(hex: "#3A3A3D") : Color(hex: "#E8E7E3") }
+    private func c(_ light: String, _ dark: String) -> Color {
+        Color(hex: isDark ? dark : light)
+    }
+    private func rgba(_ r: Double, _ g: Double, _ b: Double, _ a: Double) -> Color {
+        Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: a)
+    }
 
-    // MARK: Hairlines and borders
-    var hairline: Color { isDark ? Color.white.opacity(0.07) : Color.black.opacity(0.06) }
-    var cardBorder: Color { isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04) }
-    var divider: Color { isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05) }
+    // Surfaces
+    var page: Color { c("#ECEBE7", "#0F0F0E") }
+    var win: Color { c("#FBFBFA", "#1B1B1A") }
+    var side: Color { c("#F3F3F1", "#222220") }
+    var surface: Color { c("#FFFFFF", "#2A2A28") }
+    var field: Color { c("#FFFFFF", "#1F1F1E") }
+    var fill: Color { c("#EDEDEA", "#2E2E2C") }
 
-    // MARK: Text
-    var textPrimary: Color { isDark ? Color(hex: "#F4F4F2") : Color(hex: "#1B1B1A") }
-    var textSecondary: Color { isDark ? Color(hex: "#9A9A95") : Color(hex: "#6A6A63") }
-    var textMuted: Color { isDark ? Color(hex: "#75756F") : Color(hex: "#A6A5A1") }
-    var textFaint: Color { isDark ? Color(hex: "#55555A") : Color(hex: "#C7C6C2") }
+    // Lines
+    var line: Color { c("#E7E6E2", "#333331") }
+    var lineSoft: Color { c("#EFEEEB", "#2A2A28") }
+    var lineStrong: Color { c("#D8D7D2", "#42423F") }
 
-    // MARK: Accent (the one saturated color, used sparingly)
-    var accent: Color { isDark ? Color(hex: "#4FB58C") : Color(hex: "#2E7D64") }
-    var accentSoft: Color { accent.opacity(isDark ? 0.18 : 0.10) }
-    var onAccent: Color { Color.white }
+    // Ink
+    var ink: Color { c("#1C1C1A", "#EDEDE9") }
+    var ink2: Color { c("#5D5C57", "#AAA9A3") }
+    var ink3: Color { c("#8D8C86", "#7C7B76") }
+    var hover: Color { isDark ? rgba(255, 255, 255, 0.05) : rgba(28, 28, 26, 0.045) }
 
-    // MARK: Status (reserved for state)
-    var locked: Color { isDark ? Color(hex: "#C9A24B") : Color(hex: "#9A7A2E") }
-    var warning: Color { isDark ? Color(hex: "#E5A05F") : Color(hex: "#B5702A") }
-    var danger: Color { isDark ? Color(hex: "#E58370") : Color(hex: "#C8543F") }
+    // Accent
+    var accent: Color { c("#2E7D64", "#4FB58C") }
+    var accentInk: Color { c("#FFFFFF", "#0D1F17") }
+    var accentSoft: Color { isDark ? rgba(79, 181, 140, 0.13) : Color(hex: "#E7F2ED") }
+    var accentText: Color { c("#246A53", "#72CBA5") }
+    var accentRing: Color { isDark ? rgba(79, 181, 140, 0.25) : rgba(46, 125, 100, 0.18) }
 
-    // MARK: Monospace tone for keys and values
-    var mono: Color { isDark ? Color(hex: "#C9D7D1") : Color(hex: "#2C3A35") }
+    // Warn
+    var warn: Color { c("#8A5300", "#E8B062") }
+    var warnSoft: Color { isDark ? rgba(232, 176, 98, 0.10) : Color(hex: "#FBF2E2") }
+    var warnLine: Color { isDark ? rgba(232, 176, 98, 0.30) : Color(hex: "#EDD5A8") }
 
-    // MARK: Shape metrics
-    let windowRadius: CGFloat = 20
-    let cardRadius: CGFloat = 14
-    let chipRadius: CGFloat = 7
-    let controlRadius: CGFloat = 10
+    // Danger
+    var danger: Color { c("#BF3A2F", "#F0796D") }
+    var dangerSoft: Color { isDark ? rgba(240, 121, 109, 0.12) : Color(hex: "#FBECEA") }
+
+    // Scrim and toast
+    var scrim: Color { isDark ? rgba(0, 0, 0, 0.45) : rgba(28, 28, 26, 0.18) }
+    var toast: Color { c("#1E1E1C", "#EDEDE9") }
+    var toastInk: Color { c("#F4F4F1", "#1C1C1A") }
+    var toastInk2: Color { c("#A7A6A0", "#6A6964") }
+
+    // macOS traffic lights (constant)
+    var tlRed: Color { Color(hex: "#FF5F57") }
+    var tlYellow: Color { Color(hex: "#FEBC2E") }
+    var tlGreen: Color { Color(hex: "#28C840") }
 }
 
 private struct ThemeKey: EnvironmentKey {
@@ -60,8 +72,19 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Injects a `Theme` resolved from the current color scheme.
     func provideTheme(_ scheme: ColorScheme) -> some View {
         environment(\.theme, Theme(scheme: scheme))
+    }
+}
+
+/// Fonts. The design uses Pretendard for sans and JetBrains Mono for mono. We use
+/// the native system fallbacks the design itself specifies (SF Pro and SF Mono),
+/// keeping the app pure native.
+extension Font {
+    static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
     }
 }
