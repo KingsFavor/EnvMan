@@ -48,13 +48,19 @@ struct Sidebar: View {
 
     private var list: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(store.groupedNamespaces, id: \.project) { group in
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(group.project.isEmpty ? "기타" : group.project)
-                            .font(.mono(11, .medium)).foregroundStyle(t.ink3)
-                            .padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 4)
-                        ForEach(group.items) { ns in row(ns) }
+                        // Only show the project subheader when it actually groups
+                        // more than one namespace; a lone namespace shows on its own.
+                        if group.items.count > 1 {
+                            Text(group.project.isEmpty ? "기타" : group.project)
+                                .font(.mono(11, .medium)).foregroundStyle(t.ink3)
+                                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 4)
+                            ForEach(group.items) { ns in row(ns, label: ns.env.isEmpty ? ns.project : ns.env) }
+                        } else if let ns = group.items.first {
+                            row(ns, label: ns.env.isEmpty ? ns.project : ns.path)
+                        }
                     }
                 }
                 if creating { newNsInput }
@@ -63,7 +69,7 @@ struct Sidebar: View {
         }
     }
 
-    private func row(_ ns: NamespaceData) -> some View {
+    private func row(_ ns: NamespaceData, label: String) -> some View {
         let active = ui.selectedNamespace == ns.id
         return Group {
             if renamingID == ns.id {
@@ -74,7 +80,7 @@ struct Sidebar: View {
                     .onSubmit { commitRename(ns) }
                     .onExitCommand { renamingID = nil }
             } else {
-                RowButton(active: active, ns: ns,
+                RowButton(active: active, ns: ns, label: label,
                           onSelect: { ui.selectNamespace(ns.id) },
                           onRename: { renamingID = ns.id; renameText = ns.path; DispatchQueue.main.async { focusRename = true } },
                           onUp: { store.moveNamespace(id: ns.id, by: -1) },
@@ -184,6 +190,7 @@ private struct RowButton: View {
     @Environment(\.theme) private var t
     let active: Bool
     let ns: NamespaceData
+    let label: String
     let onSelect: () -> Void
     let onRename: () -> Void
     let onUp: () -> Void
@@ -194,7 +201,7 @@ private struct RowButton: View {
     var body: some View {
         HStack(spacing: 8) {
             lucide("folder-lock").font(.system(size: 14)).foregroundStyle(active ? t.accent : t.ink3)
-            Text(ns.env.isEmpty ? ns.project : ns.env)
+            Text(label)
                 .font(.sans(13, active ? .semibold : .regular)).foregroundStyle(t.ink)
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)

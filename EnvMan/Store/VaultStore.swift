@@ -410,11 +410,13 @@ final class VaultStore {
 
     func copyToClipboard(_ text: String, title: String, sub: String? = nil) {
         Clipboard.copy(text, clearAfter: settings.clipboardClearSeconds)
-        if settings.clipboardClearSeconds > 0 {
+        let secs = settings.clipboardClearSeconds
+        if secs > 0 {
             let start = Date()
-            showToast(Toast(icon: "circle-check", title: title, sub: sub, kind: .clip,
-                            clipStart: start, clipEnd: start.addingTimeInterval(TimeInterval(settings.clipboardClearSeconds))),
-                      duration: TimeInterval(settings.clipboardClearSeconds))
+            showToast(Toast(icon: "circle-check", title: title,
+                            sub: sub ?? "\(secs)초 후 클립보드에서 지워집니다", kind: .clip,
+                            clipStart: start, clipEnd: start.addingTimeInterval(TimeInterval(secs))),
+                      duration: TimeInterval(secs))
         } else {
             showToast(Toast(icon: "circle-check", title: title, sub: sub))
         }
@@ -434,16 +436,9 @@ final class VaultStore {
 
     func showToast(_ t: Toast, duration: TimeInterval = 3.2) {
         toast = t
-        now = Date()
         toastTask?.cancel()
         toastTask = Task { @MainActor [weak self] in
-            // keep ticking so clip progress animates
-            let deadline = Date().addingTimeInterval(duration)
-            while Date() < deadline {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                guard let self, self.toast?.id == t.id else { return }
-                self.now = Date()
-            }
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
             if self?.toast?.id == t.id { self?.toast = nil }
         }
     }
