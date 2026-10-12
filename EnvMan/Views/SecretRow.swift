@@ -33,7 +33,9 @@ struct SecretRow: View {
                 Text(Formatting.ago(secret.updated)).font(.sans(11.5)).foregroundStyle(t.ink3).frame(width: 56, alignment: .leading)
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { copyValue() }
+            // simultaneousGesture (not onTapGesture) so it never makes the
+            // checkbox or action buttons wait to disambiguate a single click.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { copyValue() })
 
             actions.frame(width: 150, alignment: .trailing)
         }
@@ -115,8 +117,10 @@ struct SecretRow: View {
             } label: {
                 lucide("ellipsis").font(.system(size: 14)).foregroundStyle(menuHover ? t.ink : t.ink3).frame(width: 28, height: 28)
                     .background(RoundedRectangle(cornerRadius: 7).fill(menuHover ? t.hover : .clear))
+                    .contentShape(Rectangle())
+                    .onHover { menuHover = $0 }
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).onHover { menuHover = $0 }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
         }
     }
 
@@ -154,14 +158,13 @@ private struct CopyMiniButton: View {
     @State private var hover = false
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                lucide("copy").font(.system(size: 13))
-                Text("복사").font(.sans(12, .semibold))
-            }
-            .foregroundStyle(hover ? t.accentText : t.ink2)
-            .frame(width: 72, height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(hover ? t.accent : t.lineStrong, lineWidth: 1)))
+            lucide("copy").font(.system(size: 14))
+                .foregroundStyle(hover ? t.accent : t.ink2)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7).fill(hover ? t.hover : .clear))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover = $0 }
+        .help("값 복사")
     }
 }

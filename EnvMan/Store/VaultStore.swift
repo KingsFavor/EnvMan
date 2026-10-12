@@ -271,6 +271,39 @@ final class VaultStore {
         try? persist()
     }
 
+    /// Clones a namespace with every key inside it. The stored values are
+    /// ciphertext under the same DEK, so they copy verbatim (no re-encryption);
+    /// only the namespace and secret ids are regenerated. The copy lands right
+    /// after the source with a unique "… copy" path and the same folder color.
+    @discardableResult
+    func duplicateNamespace(id: UUID) -> UUID? {
+        guard let i = idx(id), let src = vault?.namespaces[i] else { return nil }
+        let existing = Set(vault?.namespaces.map { $0.path } ?? [])
+        let (p, e) = Self.parsePath(Self.uniquePath(base: src.path, existing: existing))
+        let now = Date()
+        var copy = NamespaceData(project: p, env: e)
+        copy.colorHex = src.colorHex
+        copy.created = now
+        copy.updated = now
+        copy.secrets = src.secrets.map {
+            SecretData(key: $0.key, value: $0.value, memo: $0.memo, created: now, updated: now)
+        }
+        vault?.namespaces.insert(copy, at: i + 1)
+        try? persist()
+        return copy.id
+    }
+
+    /// "api/prod" -> "api/prod copy", then "… copy 2", "… copy 3" on collision.
+    static func uniquePath(base: String, existing: Set<String>) -> String {
+        var candidate = "\(base) copy"
+        var n = 2
+        while existing.contains(candidate) {
+            candidate = "\(base) copy \(n)"
+            n += 1
+        }
+        return candidate
+    }
+
     func moveNamespace(id: UUID, by delta: Int) {
         guard var list = vault?.namespaces, let i = list.firstIndex(where: { $0.id == id }) else { return }
         let j = i + delta

@@ -163,6 +163,10 @@ struct CheckBox: View {
                 if partial { lucide("minus").font(.system(size: size * 0.7, weight: .bold)).foregroundStyle(t.accentInk) }
                 else if on { lucide("check").font(.system(size: size * 0.7, weight: .bold)).foregroundStyle(t.accentInk) }
             }
+            // A clear fill is not hit-testable, so without this the empty
+            // (unchecked) box only responds on its 1pt border. Make the whole
+            // square tappable so it can always be re-checked.
+            .contentShape(Rectangle())
     }
 }
 

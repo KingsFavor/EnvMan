@@ -88,6 +88,7 @@ struct Sidebar: View {
                           onUp: { store.moveNamespace(id: ns.id, by: -1) },
                           onDown: { store.moveNamespace(id: ns.id, by: 1) },
                           onSetColor: { store.setNamespaceColor(id: ns.id, hex: $0) },
+                          onDuplicate: { if let newID = store.duplicateNamespace(id: ns.id) { ui.selectNamespace(newID) } },
                           onDelete: { ui.sheet = .deleteNamespace(ns.id) })
             }
         }
@@ -255,6 +256,7 @@ private struct RowButton: View {
     let onUp: () -> Void
     let onDown: () -> Void
     let onSetColor: (String?) -> Void
+    let onDuplicate: () -> Void
     let onDelete: () -> Void
     @State private var hover = false
     @State private var iconHover = false
@@ -285,13 +287,17 @@ private struct RowButton: View {
             Text(label)
                 .font(.sans(13, active ? .semibold : .regular)).foregroundStyle(t.ink)
                 .lineLimit(1).truncationMode(.tail)
-                .onTapGesture(count: 2) { onRename() }
+                // simultaneousGesture so the row's single-click select fires
+                // instantly instead of waiting to rule out a double-click.
+                .simultaneousGesture(TapGesture(count: 2).onEnded { onRename() })
             Spacer(minLength: 0)
             Text("\(ns.secrets.count)").font(.mono(11)).foregroundStyle(t.ink3)
             if active {
                 Menu {
                     Button("이름 변경", action: onRename)
                     Button("색상…") { showColor = true }
+                    Button("복제", action: onDuplicate)
+                    Divider()
                     Button("위로 이동", action: onUp)
                     Button("아래로 이동", action: onDown)
                     Divider()
@@ -300,9 +306,10 @@ private struct RowButton: View {
                     lucide("ellipsis").font(.system(size: 14)).foregroundStyle(menuHover ? t.ink : t.ink3)
                         .frame(width: 22, height: 22)
                         .background(RoundedRectangle(cornerRadius: 6).fill(menuHover ? t.hover : .clear))
+                        .contentShape(Rectangle())
+                        .onHover { menuHover = $0 }
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
-                .onHover { menuHover = $0 }
             }
         }
         .padding(.leading, 8).padding(.trailing, 4).frame(height: 30)

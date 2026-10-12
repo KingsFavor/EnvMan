@@ -91,9 +91,10 @@ struct DetailView: View {
                 Text(store.sortMode == .keyAsc ? "키 이름" : "최근 수정").font(.sans(12, .medium)).foregroundStyle(t.ink)
             }
             .padding(.horizontal, 10).frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(sortHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(sortHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(sortHover ? t.accent : t.lineStrong, lineWidth: 1)))
+            .onHover { sortHover = $0 }
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().onHover { sortHover = $0 }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
     }
 
     private var shareMenu: some View {
@@ -106,9 +107,10 @@ struct DetailView: View {
                 Text("공유").font(.sans(12, .medium)).foregroundStyle(t.ink)
             }
             .padding(.horizontal, 10).frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(shareHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(shareHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(shareHover ? t.accent : t.lineStrong, lineWidth: 1)))
+            .onHover { shareHover = $0 }
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().onHover { shareHover = $0 }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
     }
 
     private var lockedBanner: some View {
