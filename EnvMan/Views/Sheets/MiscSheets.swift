@@ -46,6 +46,7 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(VaultStore.self) private var store
     @Environment(AppSettings.self) private var settings
+    @Environment(UpdateChecker.self) private var updates
 
     @State private var showChange = false
     @State private var showReissue = false
@@ -104,6 +105,15 @@ struct SettingsSheet: View {
                             GhostButton(title: "보기…", height: 26, hpad: 10, fontSize: 12) { manualTopic = .terminalHistory; showManual = true }
                         }
                     }
+                    section("앱 정보") {
+                        settingRow("버전", updateStatusText) {
+                            if updates.updateAvailable {
+                                GhostButton(title: "릴리즈 보기", height: 26, hpad: 10, fontSize: 12) { updates.openReleasePage() }
+                            } else {
+                                GhostButton(title: "업데이트 확인", height: 26, hpad: 10, fontSize: 12) { updates.checkForUpdatesInteractive() }
+                            }
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 10) {
                         FieldLabel(text: "위험", color: t.danger)
                         HStack {
@@ -126,6 +136,13 @@ struct SettingsSheet: View {
         .sheet(isPresented: $showReissue) { ReissueRecoverySheet().environment(\.theme, t) }
         .sheet(isPresented: $showReset) { ResetConfirmSheet(onDone: { dismiss() }).environment(\.theme, t) }
         .sheet(isPresented: $showManual) { ManualSheet(initial: manualTopic).environment(\.theme, t) }
+    }
+
+    private var updateStatusText: String {
+        if updates.isChecking { return "업데이트를 확인하는 중입니다…" }
+        if updates.updateAvailable, let v = updates.latestVersion { return "새 버전 \(v)을(를) 사용할 수 있습니다. 현재 \(BuildInfo.version)." }
+        if updates.upToDateNotice { return "최신 버전입니다. 현재 \(BuildInfo.version)." }
+        return "현재 \(BuildInfo.version)을(를) 사용 중입니다."
     }
 
     private var divider: some View { Rectangle().fill(t.lineSoft).frame(height: 1) }

@@ -57,6 +57,8 @@ private func sfName(_ name: String) -> String {
     case "info": return "info.circle.fill"
     case "circle-help": return "questionmark.circle.fill"
     case "folder": return "folder.fill"
+    case "sparkles": return "sparkles"
+    case "arrow-up-right": return "arrow.up.right"
     default: return "questionmark"
     }
 }

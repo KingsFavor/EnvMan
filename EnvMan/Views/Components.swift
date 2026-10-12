@@ -200,6 +200,51 @@ extension View {
     func fieldBG(_ focused: Bool = false) -> some View { modifier(FieldBG(focused: focused)) }
 }
 
+// MARK: Update banner
+
+/// A slim, dismissible "update available" bar. No modal, no auto-download:
+/// offers a copyable Homebrew command and a link to the release (DMG).
+struct UpdateBanner: View {
+    @Environment(\.theme) private var t
+    @Environment(UpdateChecker.self) private var updates
+
+    var body: some View {
+        if updates.updateAvailable, let version = updates.latestVersion {
+            HStack(spacing: 10) {
+                lucide("sparkles").font(.system(size: 13)).foregroundStyle(t.accent)
+                Text("새 버전 \(version) 사용 가능").font(.sans(12.5, .semibold)).foregroundStyle(t.ink)
+
+                HStack(spacing: 6) {
+                    Text(updates.updateCommand).font(.mono(11)).foregroundStyle(t.ink2)
+                        .lineLimit(1).truncationMode(.tail)
+                    Button { updates.copyCommand() } label: {
+                        lucide(updates.commandCopied ? "check" : "copy").font(.system(size: 11))
+                            .foregroundStyle(updates.commandCopied ? t.accent : t.ink2)
+                    }
+                    .buttonStyle(.plain).help("Homebrew 업데이트 명령 복사")
+                }
+                .padding(.horizontal, 8).frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(t.field).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(t.lineStrong, lineWidth: 1)))
+
+                Spacer(minLength: 8)
+
+                Button { updates.openReleasePage() } label: {
+                    HStack(spacing: 4) {
+                        Text("릴리즈 보기").font(.sans(12, .medium))
+                        lucide("arrow-up-right").font(.system(size: 10))
+                    }.foregroundStyle(t.accent)
+                }.buttonStyle(.plain).help("릴리즈 페이지 열기 (DMG 직접 내려받기)")
+
+                IconButton(icon: "x", size: 24, fontSize: 12, help: "이 버전 알림 숨기기") { updates.dismiss() }
+            }
+            .padding(.leading, 20).padding(.trailing, 10).frame(height: 40)
+            .background(t.accentSoft)
+            .overlay(alignment: .bottom) { Rectangle().fill(t.line).frame(height: 1) }
+            .animation(.default, value: updates.commandCopied)
+        }
+    }
+}
+
 // MARK: Section label
 
 struct FieldLabel: View {

@@ -6,10 +6,13 @@ struct MainView: View {
     @Environment(UIState.self) private var ui
 
     var body: some View {
-        HStack(spacing: 0) {
-            Sidebar().frame(width: 240)
-            Rectangle().fill(t.line).frame(width: 1)
-            DetailView()
+        VStack(spacing: 0) {
+            UpdateBanner()
+            HStack(spacing: 0) {
+                Sidebar().frame(width: 240)
+                Rectangle().fill(t.line).frame(width: 1)
+                DetailView()
+            }
         }
         .background(t.win)
         .onAppear {
