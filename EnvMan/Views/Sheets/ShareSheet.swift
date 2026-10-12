@@ -47,7 +47,7 @@ struct ShareSheet: View {
 
     private var headerStepper: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(mode == .export ? "암호화 내보내기" : "암호화 가져오기").font(.sans(17, .bold)).foregroundStyle(t.ink)
+            Text(mode == .export ? "암호화된 전체 데이터 내보내기" : "암호화된 데이터 불러오기").font(.sans(17, .bold)).foregroundStyle(t.ink)
             HStack(spacing: 6) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, label in
                     HStack(spacing: 6) {
@@ -93,12 +93,12 @@ struct ShareSheet: View {
             }
             .background(RoundedRectangle(cornerRadius: 10).strokeBorder(t.line, lineWidth: 1))
         case 1:
-            Text("받는 사람이 파일을 열 때 쓸 암호입니다. 내 마스터 비밀번호와는 별개입니다.").font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(2)
+            Text("내보낸 파일을 받는 사람이 파일을 열 때 쓸 공유 암호입니다. 내 마스터 비밀번호와는 별개입니다.").font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(2)
             SecureField("공유 암호", text: $exPw).font(.mono(13)).frame(height: 34).fieldBG().padding(.top, 14)
             StrengthBars(password: exPw).padding(.top, 8)
             HStack(alignment: .top, spacing: 10) {
                 lucide("message-square-lock").font(.system(size: 14)).foregroundStyle(t.ink2).padding(.top, 1)
-                Text("암호는 파일과 다른 경로(전화, 다른 메신저)로 전달하세요. 같은 대화방에 함께 보내면 암호화의 의미가 줄어듭니다.")
+                Text("공유 암호는 파일과 다른 경로(전화, 다른 메신저)로 전달하세요. 파일과 함께 보내면 보안 상 취약합니다.")
                     .font(.sans(12)).foregroundStyle(t.ink2).lineSpacing(2)
             }
             .padding(.horizontal, 12).padding(.vertical, 10).padding(.top, 16)

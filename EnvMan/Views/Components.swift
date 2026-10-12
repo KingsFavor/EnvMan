@@ -15,6 +15,7 @@ struct AccentButton: View {
     var fontSize: CGFloat = 13
     var disabled: Bool = false
     let action: () -> Void
+    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
@@ -26,12 +27,16 @@ struct AccentButton: View {
             .foregroundStyle(t.accentInk)
             .padding(.horizontal, hpad)
             .frame(height: height)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.accent))
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.accent)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(hover && !disabled ? 0.1 : 0)))
+            )
             .opacity(disabled ? 0.5 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(disabled)
+        .onHover { hover = $0 }
     }
 }
 
@@ -44,6 +49,7 @@ struct GhostButton: View {
     var fontSize: CGFloat = 13
     var danger: Bool = false
     let action: () -> Void
+    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
@@ -54,12 +60,13 @@ struct GhostButton: View {
             .padding(.horizontal, hpad)
             .frame(height: height)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.surface)
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hover ? t.hover : t.surface)
                     .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(danger ? t.danger : t.lineStrong, lineWidth: 1))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hover = $0 }
     }
 }
 

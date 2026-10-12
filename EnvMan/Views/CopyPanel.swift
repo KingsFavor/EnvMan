@@ -79,7 +79,7 @@ struct CopyPanel: View {
             }
             Button { ui.gh.org.toggle() } label: {
                 HStack {
-                    Text("조직 시크릿으로 설정").font(.sans(12)).foregroundStyle(t.ink)
+                    Text("조직(org) 시크릿으로 설정").font(.sans(12)).foregroundStyle(t.ink)
                     Spacer()
                     Switch(on: ui.gh.org)
                 }.contentShape(Rectangle())
@@ -129,10 +129,15 @@ struct CopyPanel: View {
     private var riskyWarning: some View {
         HStack(alignment: .top, spacing: 10) {
             lucide("triangle-alert").font(.system(size: 15)).foregroundStyle(t.warn).padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("값이 셸 기록에 남을 수 있습니다").font(.sans(12.5, .semibold)).foregroundStyle(t.warn)
-                Text("이 명령에는 값이 그대로 들어 있습니다. 터미널에 붙여넣어 실행하면 기록 파일에 평문으로 남을 수 있으니, 실행 후 기록에서 지우세요.")
-                    .font(.sans(11.5)).foregroundStyle(t.ink2).lineSpacing(3)
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("값이 셸 기록에 남을 수 있습니다").font(.sans(12.5, .semibold)).foregroundStyle(t.warn)
+                    Text("이 명령에는 값이 그대로 들어 있습니다. 터미널에 붙여넣어 실행하면 기록에 남을 수 있으니, 실행 후 기록에서 지우세요.")
+                        .font(.sans(11.5)).foregroundStyle(t.ink2).lineSpacing(3)
+                }
+                GhostButton(title: "터미널 히스토리 삭제 방법", icon: "terminal", height: 26, hpad: 10, fontSize: 12) {
+                    ui.sheet = .manual(.terminalHistory)
+                }
             }
         }
         .padding(12)

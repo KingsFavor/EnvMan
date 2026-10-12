@@ -70,7 +70,7 @@ final class VaultStore {
             let json = try Crypto.open(blob, key: key)
             vault = try JSONDecoder().decode(VaultFile.self, from: json)
         } catch {
-            lastError = (error as? LocalizedError)?.errorDescription ?? "볼트를 불러오지 못했습니다."
+            lastError = (error as? LocalizedError)?.errorDescription ?? "암호화 환경을 불러오지 못했습니다."
         }
     }
 
@@ -117,6 +117,14 @@ final class VaultStore {
         let raw = try Crypto.open(vault.wrappedDEK, key: kek)
         dek = SymmetricKey(data: raw)
         startSession()
+    }
+
+    /// Checks the master password without changing session state. Used to gate
+    /// destructive actions (for example, full reset) behind the password.
+    func verifyMasterPassword(_ password: String) -> Bool {
+        guard let vault else { return false }
+        let kek = Crypto.deriveKey(password: password, salt: vault.kdf.salt, iterations: vault.kdf.iterations)
+        return (try? Crypto.open(vault.wrappedDEK, key: kek)) != nil
     }
 
     @discardableResult
@@ -253,6 +261,13 @@ final class VaultStore {
 
     func deleteNamespace(id: UUID) {
         vault?.namespaces.removeAll { $0.id == id }
+        try? persist()
+    }
+
+    /// Sets a namespace folder color (RRGGBB hex), or nil to restore the default.
+    func setNamespaceColor(id: UUID, hex: String?) {
+        guard let i = idx(id) else { return }
+        vault?.namespaces[i].colorHex = hex
         try? persist()
     }
 

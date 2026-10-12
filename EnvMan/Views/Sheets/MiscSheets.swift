@@ -50,6 +50,8 @@ struct SettingsSheet: View {
     @State private var showChange = false
     @State private var showReissue = false
     @State private var showReset = false
+    @State private var showManual = false
+    @State private var manualTopic: ManualTopic? = nil
 
     var body: some View {
         @Bindable var settings = settings
@@ -65,12 +67,12 @@ struct SettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     section("모양") {
-                        settingRow("외형", "시스템 설정을 따르거나 라이트, 다크로 고정합니다.") {
+                        settingRow("외형", "시스템 설정을 따르거나 라이트, 다크 모드로 고정합니다.") {
                             Seg(options: Appearance.allCases.map { ($0, $0.label) }, selection: $settings.appearance, height: 24, fontSize: 12).fixedSize()
                         }
                     }
                     section("세션과 클립보드") {
-                        settingRow("세션 유지 시간", "잠금 해제 후 이 시간이 지나면 자동으로 잠깁니다.") {
+                        settingRow("세션 유지 시간", "잠금 해제 후 이 시간이 지나면 자동으로 다시 잠깁니다.") {
                             Seg(options: AppSettings.sessionPresets.map { ($0.seconds, $0.label) }, selection: $settings.sessionSeconds, height: 24, fontSize: 12).fixedSize()
                         }
                         divider
@@ -85,12 +87,21 @@ struct SettingsSheet: View {
                         toggleRow("창을 닫으면 잠그기", $settings.lockOnWindowClose)
                     }
                     section("비밀번호와 복구") {
-                        settingRow("마스터 비밀번호", "잊으면 값은 복구할 수 없습니다. 복구 키만이 예외입니다.") {
+                        settingRow("비밀번호", "비밀번호를 잊으면 복구 키를 사용해야만 복구할 수 있습니다.") {
                             GhostButton(title: "변경…", height: 26, hpad: 10, fontSize: 12) { showChange = true }
                         }
                         divider
                         settingRow("복구 키", "새로 발급하면 이전 키는 바로 무효가 됩니다.") {
                             GhostButton(title: "재발급…", height: 26, hpad: 10, fontSize: 12) { showReissue = true }
+                        }
+                    }
+                    section("도움말") {
+                        settingRow("매뉴얼", "기능별 사용법을 그림과 함께 안내합니다.") {
+                            GhostButton(title: "열기…", height: 26, hpad: 10, fontSize: 12) { manualTopic = nil; showManual = true }
+                        }
+                        divider
+                        settingRow("터미널 히스토리 삭제 방법", "복사한 명령이 셸 기록에 남았을 때 지우는 방법입니다.") {
+                            GhostButton(title: "보기…", height: 26, hpad: 10, fontSize: 12) { manualTopic = .terminalHistory; showManual = true }
                         }
                     }
                     VStack(alignment: .leading, spacing: 10) {
@@ -114,6 +125,7 @@ struct SettingsSheet: View {
         .sheet(isPresented: $showChange) { ChangePasswordSheet().environment(\.theme, t) }
         .sheet(isPresented: $showReissue) { ReissueRecoverySheet().environment(\.theme, t) }
         .sheet(isPresented: $showReset) { ResetConfirmSheet(onDone: { dismiss() }).environment(\.theme, t) }
+        .sheet(isPresented: $showManual) { ManualSheet(initial: manualTopic).environment(\.theme, t) }
     }
 
     private var divider: some View { Rectangle().fill(t.lineSoft).frame(height: 1) }
@@ -162,7 +174,7 @@ struct ChangePasswordSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("마스터 비밀번호 변경").font(.sans(17, .bold)).foregroundStyle(t.ink)
+            Text("비밀번호 변경").font(.sans(17, .bold)).foregroundStyle(t.ink)
             FieldLabel(text: "현재 비밀번호", color: t.ink2).padding(.top, 18).padding(.bottom, 6)
             SecureField("", text: $current).font(.mono(13)).frame(height: 34).fieldBG()
             FieldLabel(text: "새 비밀번호 (8자 이상)", color: t.ink2).padding(.top, 14).padding(.bottom, 6)
@@ -210,8 +222,8 @@ struct ReissueRecoverySheet: View {
                     AccentButton(title: "완료") { dismiss() }
                 }.padding(.top, 16)
             } else {
-                Text("현재 마스터 비밀번호를 확인한 뒤 새 복구 키를 발급합니다.").font(.sans(12.5)).foregroundStyle(t.ink2).padding(.top, 6)
-                SecureField("마스터 비밀번호", text: $password).font(.mono(13)).frame(height: 34).fieldBG().padding(.top, 16)
+                Text("현재 비밀번호를 확인한 뒤 새 복구 키를 발급합니다.").font(.sans(12.5)).foregroundStyle(t.ink2).padding(.top, 6)
+                SecureField("비밀번호", text: $password).font(.mono(13)).frame(height: 34).fieldBG().padding(.top, 16)
                 if let error { Text(error).font(.sans(12)).foregroundStyle(t.danger).padding(.top, 8) }
                 HStack {
                     Spacer()
@@ -235,25 +247,32 @@ struct ResetConfirmSheet: View {
     @Environment(VaultStore.self) private var store
     var onDone: () -> Void
     @State private var confirm = ""
+    @State private var password = ""
+    @State private var error: String?
+
+    private var canReset: Bool { confirm == "초기화" && !password.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             RoundedRectangle(cornerRadius: 12).fill(t.dangerSoft).frame(width: 44, height: 44)
                 .overlay(lucide("triangle-alert").font(.system(size: 20)).foregroundStyle(t.danger)).padding(.bottom, 14)
             Text("모든 데이터 초기화").font(.sans(17, .bold)).foregroundStyle(t.ink)
-            Text("비밀번호와 모든 값을 영구히 지웁니다. 복구 키로도 되돌릴 수 없습니다. 계속하려면 아래에 초기화를 입력하세요.")
+            Text("비밀번호와 모든 값을 영구히 지웁니다. 복구 키로도 되돌릴 수 없습니다. 계속하려면 아래에 초기화를 입력하고 비밀번호를 확인하세요.")
                 .font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(3).padding(.top, 6)
             TextField("초기화", text: $confirm).font(.sans(13)).frame(height: 34).fieldBG().padding(.top, 16)
+            SecureField("비밀번호", text: $password).font(.mono(13)).frame(height: 34).fieldBG().padding(.top, 10)
+            if let error { Text(error).font(.sans(12)).foregroundStyle(t.danger).padding(.top, 8) }
             HStack {
                 Spacer()
                 GhostButton(title: "취소") { dismiss() }
                 Button {
+                    guard store.verifyMasterPassword(password) else { error = "비밀번호가 올바르지 않습니다."; return }
                     store.resetEverything(); dismiss(); onDone()
                 } label: {
                     Text("초기화").font(.sans(13, .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 16).frame(height: 30)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(confirm == "초기화" ? t.danger : t.danger.opacity(0.5)))
-                }.buttonStyle(.plain).disabled(confirm != "초기화")
+                        .background(RoundedRectangle(cornerRadius: 7).fill(canReset ? t.danger : t.danger.opacity(0.5)))
+                }.buttonStyle(.plain).disabled(!canReset)
             }.padding(.top, 22)
         }
         .padding(24).frame(width: 440).background(t.surface)

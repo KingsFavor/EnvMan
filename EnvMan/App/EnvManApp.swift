@@ -45,11 +45,11 @@ struct AppCommands: Commands {
             .keyboardShortcut("n", modifiers: .command)
             .disabled(store.state == .uninitialized || ui.selectedNamespace == nil)
         }
-        CommandMenu("금고") {
-            Button("잠금 해제…") { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 마스터 비밀번호를 입력하세요.") }
+        CommandMenu("잠금") {
+            Button("잠금 해제…") { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.") }
                 .keyboardShortcut("u", modifiers: .command)
                 .disabled(store.state != .locked)
-            Button("지금 잠그기") { store.lock(); ui.onLock() }
+            Button("바로 잠그기") { store.lock(); ui.onLock() }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!store.isUnlocked)
         }

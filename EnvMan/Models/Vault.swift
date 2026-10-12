@@ -30,8 +30,10 @@ struct NamespaceData: Codable, Identifiable, Equatable {
     var created: Date = Date()
     var updated: Date = Date()
     var secrets: [SecretData] = []
+    /// Optional folder color as an RRGGBB hex string. nil uses the default color.
+    var colorHex: String? = nil
 
-    var path: String { "\(project)/\(env)" }
+    var path: String { env.isEmpty ? project : "\(project)/\(env)" }
 }
 
 struct SecretData: Codable, Identifiable, Equatable {

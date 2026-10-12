@@ -1,6 +1,42 @@
 import SwiftUI
 import Observation
 
+/// Sections of the in-app manual. Used to deep-link the manual to a topic.
+enum ManualTopic: String, CaseIterable, Identifiable {
+    case overview, namespace, secrets, reveal, copy, terminalHistory, share, lock, password, appearance
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overview: return "개요"
+        case .namespace: return "네임스페이스"
+        case .secrets: return "시크릿 추가와 편집"
+        case .reveal: return "값 보기와 복사"
+        case .copy: return "선택 복사"
+        case .terminalHistory: return "터미널 히스토리 삭제"
+        case .share: return "내보내기와 가져오기"
+        case .lock: return "잠금과 세션"
+        case .password: return "비밀번호와 복구 키"
+        case .appearance: return "모양"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .overview: return "book-open"
+        case .namespace: return "folder-lock"
+        case .secrets: return "plus"
+        case .reveal: return "eye"
+        case .copy: return "copy"
+        case .terminalHistory: return "terminal"
+        case .share: return "share"
+        case .lock: return "lock"
+        case .password: return "key"
+        case .appearance: return "palette"
+        }
+    }
+}
+
 enum ActiveSheet: Identifiable, Equatable {
     case unlock(reason: String)
     case recovery
@@ -13,6 +49,7 @@ enum ActiveSheet: Identifiable, Equatable {
     case importFile
     case changePassword
     case reissueRecovery
+    case manual(ManualTopic?)
 
     var id: String {
         switch self {
@@ -27,6 +64,7 @@ enum ActiveSheet: Identifiable, Equatable {
         case .importFile: return "import"
         case .changePassword: return "changepw"
         case .reissueRecovery: return "reissue"
+        case .manual: return "manual"
         }
     }
 }

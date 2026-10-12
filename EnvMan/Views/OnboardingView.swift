@@ -61,13 +61,13 @@ struct OnboardingView: View {
             Image("BrandMark").resizable().interpolation(.high).scaledToFit().frame(width: 100, height: 100)
                 .padding(.bottom, 20)
             Text("EnvMan").font(.wordmark(34)).foregroundStyle(t.ink)
-            Text("환경변수와 API 키를 이 Mac 안에 암호화해 보관하고,\n필요할 때 바로 복사합니다.")
+            Text("환경변수와 API 키를 사용자의 Mac 안에 암호화해 보관하고,\n필요할 때 바로 복사합니다.")
                 .font(.sans(15)).foregroundStyle(t.ink2).multilineTextAlignment(.center)
                 .lineSpacing(3).padding(.top, 10).frame(width: 440)
 
             VStack(spacing: 0) {
-                introRow("hard-drive", "이 Mac에만 저장됩니다", "값은 암호화되어 디스크에 남고, 네트워크로 보내지 않습니다.", first: true)
-                introRow("lock-keyhole", "이름은 열려 있고, 값은 잠겨 있습니다", "키 이름은 바로 보이고, 값은 비밀번호로만 열립니다.")
+                introRow("hard-drive", "이 Mac에만 저장됩니다", "값은 암호화되어 이 Mac에만 저장되고 제삼자에게 전송되지 않습니다.", first: true)
+                introRow("lock-keyhole", "이름만 확인 가능하며, 값은 잠겨 있습니다", "키 이름은 바로 보이고, 값은 비밀번호로만 열립니다.")
                 introRow("clipboard-x", "복사한 값은 잠시 후 지워집니다", "클립보드에 오래 남지 않도록 자동으로 비웁니다.")
             }
             .padding(6)
@@ -115,7 +115,7 @@ struct OnboardingView: View {
     private var createPassword: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("마스터 비밀번호 만들기").font(.sans(22, .bold)).foregroundStyle(t.ink)
-            Text("값을 암호화하는 데 쓰는 비밀번호입니다. 이 Mac 밖으로 나가지 않습니다.")
+            Text("값을 암호화하는 데 쓰는 비밀번호입니다.")
                 .font(.sans(13)).foregroundStyle(t.ink2).padding(.top, 6)
 
             FieldLabel(text: "비밀번호", color: t.ink2).padding(.top, 26).padding(.bottom, 6)
@@ -140,7 +140,7 @@ struct OnboardingView: View {
 
             HStack(alignment: .top, spacing: 10) {
                 lucide("shield-alert").font(.system(size: 16)).foregroundStyle(t.ink2).padding(.top, 1)
-                Text("비밀번호를 잊으면 저장한 값은 되살릴 수 없습니다. 대신 다음 단계에서 금고를 다시 열 수 있는 복구 키를 드립니다.")
+                Text("비밀번호를 잊으면 저장한 값은 복구할 수 없습니다. 다음 단계에서 비밀 번호를 대체할 수 있는 복구 키를 제공합니다.")
                     .font(.sans(12)).foregroundStyle(t.ink2).lineSpacing(3)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
@@ -161,7 +161,7 @@ struct OnboardingView: View {
     private var recoveryKey: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("복구 키 보관하기").font(.sans(22, .bold)).foregroundStyle(t.ink)
-            Text("비밀번호를 잊었을 때 금고를 다시 여는 유일한 방법입니다. 이 키는 지금 한 번만 표시됩니다.")
+            Text("비밀번호를 잊었을 때 값을 복원하는 유일한 방법입니다. 이 키는 지금 한 번만 표시되고 다시 확인할 수 없습니다.")
                 .font(.sans(13)).foregroundStyle(t.ink2).padding(.top, 6)
 
             VStack(spacing: 16) {
@@ -184,7 +184,7 @@ struct OnboardingView: View {
             .background(RoundedRectangle(cornerRadius: 12).fill(t.surface).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(t.lineStrong, lineWidth: 1)))
             .padding(.top, 24)
 
-            Text("비밀번호 관리자나 종이에 적어 이 Mac이 아닌 곳에 두세요. EnvMan은 복구 키를 저장하지 않습니다.")
+            Text("비밀번호 관리자나 종이에 적어 이 Mac이 아닌 곳에 보관하세요. EnvMan은 복구 키를 저장하지 않습니다.")
                 .font(.sans(12)).foregroundStyle(t.ink2).lineSpacing(3).padding(.top, 14)
 
             Button { saved.toggle() } label: {
@@ -208,15 +208,15 @@ struct OnboardingView: View {
     private var protection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("이렇게 보호됩니다").font(.sans(22, .bold)).foregroundStyle(t.ink)
-            Text("자주 여는 앱이라서, 찾는 일은 비밀번호 없이 하고 값을 꺼낼 때만 잠금을 엽니다.")
+            Text("목록 조회는 비밀번호 없이 가능하며, 값을 확인할 때만 잠금을 해제합니다.")
                 .font(.sans(13)).foregroundStyle(t.ink2).padding(.top, 6)
 
             HStack(spacing: 12) {
                 protectionCard(icon: "eye", title: "비밀번호 없이 보이는 것", items: ["네임스페이스 이름", "키 이름 (예: DATABASE_URL)", "메모"], accent: false)
-                protectionCard(icon: "lock", title: "비밀번호가 있어야 하는 것", items: ["값 보기", "값 복사", "내보내기와 가져오기"], accent: true)
+                protectionCard(icon: "lock", title: "비밀번호 입력해야 보이는 것", items: ["값 보기", "값 복사", "내보내기와 가져오기"], accent: true)
             }.padding(.top, 24)
 
-            Text("잠금을 해제하면 15분 동안 열려 있고, 그 뒤 자동으로 잠깁니다. 시간은 설정에서 바꿀 수 있습니다.")
+            Text("잠금을 해제하면 15분 동안 열려 있고, 그 뒤 자동으로 잠깁니다. 설정에서 유지 시간을 변경할 수 있습니다.")
                 .font(.sans(12)).foregroundStyle(t.ink2).lineSpacing(3).padding(.top, 16)
 
             if let error { Text(error).font(.sans(12)).foregroundStyle(t.danger).padding(.top, 10) }
@@ -254,7 +254,7 @@ struct OnboardingView: View {
 
     private func finish() {
         do { try store.createVault(masterPassword: pw, recoveryKey: recovery) }
-        catch { self.error = (error as? LocalizedError)?.errorDescription ?? "볼트 생성에 실패했습니다." }
+        catch { self.error = (error as? LocalizedError)?.errorDescription ?? "암호화 환경 생성에 실패했습니다." }
     }
 
     private func saveRecovery() {

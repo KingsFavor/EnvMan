@@ -9,6 +9,8 @@ struct SecretRow: View {
     let secret: SecretData
 
     @State private var hover = false
+    @State private var eyeHover = false
+    @State private var menuHover = false
     @State private var memoEditing = false
     @State private var memoText = ""
     @FocusState private var memoFocused: Bool
@@ -23,9 +25,16 @@ struct SecretRow: View {
             Button { toggleSelect() } label: { CheckBox(on: selected) }
                 .buttonStyle(.plain).frame(width: 20, alignment: .leading)
 
-            keyColumn.frame(maxWidth: .infinity, alignment: .leading)
-            valueColumn.frame(maxWidth: .infinity, alignment: .leading)
-            Text(Formatting.ago(secret.updated)).font(.sans(11.5)).foregroundStyle(t.ink3).frame(width: 56, alignment: .leading)
+            // Double-click to copy lives on the content area only, so it never
+            // competes with the checkbox or the action buttons for clicks.
+            HStack(spacing: 12) {
+                keyColumn.frame(maxWidth: .infinity, alignment: .leading)
+                valueColumn.frame(maxWidth: .infinity, alignment: .leading)
+                Text(Formatting.ago(secret.updated)).font(.sans(11.5)).foregroundStyle(t.ink3).frame(width: 56, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { copyValue() }
+
             actions.frame(width: 150, alignment: .trailing)
         }
         .padding(.leading, 20).padding(.trailing, 16)
@@ -33,14 +42,13 @@ struct SecretRow: View {
         .background(hover ? t.hover : .clear)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .onTapGesture(count: 2) { copyValue() }
     }
 
     private var keyColumn: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(secret.key).font(.mono(12.5, .semibold)).foregroundStyle(t.ink).lineLimit(1).truncationMode(.tail)
             if memoEditing {
-                TextField("메모 (암호화되지 않음, 값을 적지 마세요)", text: $memoText)
+                TextField("메모 (암호화되지 않음, 민감한 값을 포함하지 마세요)", text: $memoText)
                     .textFieldStyle(.plain).font(.sans(11.5)).focused($memoFocused)
                     .padding(.horizontal, 6).frame(height: 22)
                     .background(RoundedRectangle(cornerRadius: 5).fill(t.field).overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(t.accent, lineWidth: 1)))
@@ -88,11 +96,12 @@ struct SecretRow: View {
     private var actions: some View {
         HStack(spacing: 2) {
             Button { toggleReveal() } label: {
-                lucide(revealed ? "eye-off" : "eye").font(.system(size: 14)).foregroundStyle(t.ink3)
+                lucide(revealed ? "eye-off" : "eye").font(.system(size: 14)).foregroundStyle(eyeHover ? t.ink : t.ink3)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(hover ? t.hover : .clear))
+                    .background(RoundedRectangle(cornerRadius: 7).fill(eyeHover ? t.hover : .clear))
             }
             .buttonStyle(.plain).opacity(hover || revealed ? 1 : 0)
+            .onHover { eyeHover = $0 }
             .help(revealed ? "값 가리기" : "값 보기")
 
             CopyMiniButton { copyValue() }
@@ -104,9 +113,10 @@ struct SecretRow: View {
                 Divider()
                 Button("삭제", role: .destructive) { store.deleteSecret(namespaceID: namespaceID, secretID: secret.id) }
             } label: {
-                lucide("ellipsis").font(.system(size: 14)).foregroundStyle(t.ink3).frame(width: 28, height: 28)
+                lucide("ellipsis").font(.system(size: 14)).foregroundStyle(menuHover ? t.ink : t.ink3).frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(menuHover ? t.hover : .clear))
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).onHover { menuHover = $0 }
         }
     }
 
@@ -134,7 +144,7 @@ struct SecretRow: View {
     private func commitMemo() { store.setMemo(namespaceID: namespaceID, secretID: secret.id, memo: memoText); memoEditing = false }
 
     private func requireUnlock(_ action: @escaping () -> Void) {
-        if store.isUnlocked { action() } else { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 마스터 비밀번호를 입력하세요.") }
+        if store.isUnlocked { action() } else { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.") }
     }
 }
 

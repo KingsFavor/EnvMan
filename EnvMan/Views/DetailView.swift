@@ -4,6 +4,8 @@ struct DetailView: View {
     @Environment(\.theme) private var t
     @Environment(VaultStore.self) private var store
     @Environment(UIState.self) private var ui
+    @State private var sortHover = false
+    @State private var shareHover = false
 
     private var namespace: NamespaceData? {
         guard let id = ui.selectedNamespace else { return nil }
@@ -51,10 +53,8 @@ struct DetailView: View {
     private var header: some View {
         HStack(spacing: 8) {
             if let ns = namespace {
-                HStack(spacing: 6) {
-                    Text(ns.project).font(.mono(13)).foregroundStyle(t.ink3)
-                    lucide("chevron-right").font(.system(size: 13)).foregroundStyle(t.ink3)
-                    Text(ns.env).font(.sans(15, .semibold)).foregroundStyle(t.ink).lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(ns.path).font(.sans(15, .semibold)).foregroundStyle(t.ink).lineLimit(1).truncationMode(.tail)
                     Text("\(ns.secrets.count)").font(.mono(11)).foregroundStyle(t.ink2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 5).fill(t.fill))
@@ -91,9 +91,9 @@ struct DetailView: View {
                 Text(store.sortMode == .keyAsc ? "키 이름" : "최근 수정").font(.sans(12, .medium)).foregroundStyle(t.ink)
             }
             .padding(.horizontal, 10).frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(sortHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().onHover { sortHover = $0 }
     }
 
     private var shareMenu: some View {
@@ -106,9 +106,9 @@ struct DetailView: View {
                 Text("공유").font(.sans(12, .medium)).foregroundStyle(t.ink)
             }
             .padding(.horizontal, 10).frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(shareHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(t.lineStrong, lineWidth: 1)))
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().onHover { shareHover = $0 }
     }
 
     private var lockedBanner: some View {
@@ -117,7 +117,7 @@ struct DetailView: View {
             Text("값이 잠겨 있습니다. 키 이름과 메모는 비밀번호 없이 볼 수 있습니다.").font(.sans(13)).foregroundStyle(t.ink2)
             Spacer()
             AccentButton(title: "잠금 해제", height: 26, hpad: 12, fontSize: 12) {
-                ui.sheet = .unlock(reason: "값을 보거나 복사하려면 마스터 비밀번호를 입력하세요.")
+                ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.")
             }
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
@@ -200,6 +200,6 @@ struct DetailView: View {
 
     private func openAdd() { requireUnlock { ui.sheet = .add } }
     private func requireUnlock(_ action: @escaping () -> Void) {
-        if store.isUnlocked { action() } else { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 마스터 비밀번호를 입력하세요.") }
+        if store.isUnlocked { action() } else { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.") }
     }
 }

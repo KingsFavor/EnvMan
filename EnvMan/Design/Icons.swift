@@ -47,6 +47,16 @@ private func sfName(_ name: String) -> String {
     case "printer": return "printer"
     case "message-square-lock": return "bubble.left.fill"
     case "minus": return "minus"
+    case "book-open": return "book"
+    case "terminal": return "terminal"
+    case "key": return "key.fill"
+    case "key-round": return "key.fill"
+    case "list": return "list.bullet"
+    case "palette": return "paintpalette"
+    case "refresh-cw": return "arrow.triangle.2.circlepath"
+    case "info": return "info.circle.fill"
+    case "circle-help": return "questionmark.circle.fill"
+    case "folder": return "folder.fill"
     default: return "questionmark"
     }
 }

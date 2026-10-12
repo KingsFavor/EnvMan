@@ -39,6 +39,7 @@ struct RootView: View {
         case .importFile: ShareSheet(mode: .importFile)
         case .changePassword: ChangePasswordSheet()
         case .reissueRecovery: ReissueRecoverySheet()
+        case .manual(let topic): ManualSheet(initial: topic)
         }
     }
 }

@@ -63,7 +63,7 @@ struct AddSheet: View {
             FieldLabel(text: "키 이름", color: t.ink2).padding(.top, 18).padding(.bottom, 6)
             TextField("DATABASE_URL", text: $key).font(.mono(13)).frame(height: 34).fieldBG(keyFocused).focused($keyFocused)
                 .onChange(of: key) { _, v in key = VaultStore.normalizeKey(v) }
-            Text("대문자, 숫자, 밑줄만 씁니다. 입력하면 자동으로 바꿔 드립니다.").font(.sans(11)).foregroundStyle(t.ink3).padding(.top, 5)
+            Text("대문자, 숫자, 언더바(\"_\")만 사용 가능합니다.").font(.sans(11)).foregroundStyle(t.ink3).padding(.top, 5)
 
             if let dup = dupExisting {
                 HStack(alignment: .top, spacing: 10) {
@@ -77,11 +77,11 @@ struct AddSheet: View {
             }
 
             FieldLabel(text: "값", color: t.ink2).padding(.top, 16).padding(.bottom, 6)
-            TextEditorField(text: $value, placeholder: "여러 줄 값도 그대로 붙여넣을 수 있습니다", height: 92, mono: true)
+            TextEditorField(text: $value, placeholder: "여러 줄도 그대로 입력 가능합니다.", height: 92, mono: true)
 
             FieldLabel(text: "메모 (선택)", color: t.ink2).padding(.top, 16).padding(.bottom, 6)
             TextField("예: 결제, 라이브 키", text: $memo).font(.sans(13)).frame(height: 32).fieldBG()
-            Text("메모는 암호화되지 않고 잠긴 상태에서도 보입니다. 값을 적지 마세요.").font(.sans(11)).foregroundStyle(t.ink3).padding(.top, 5)
+            Text("메모는 암호화되지 않고 항상 보여집니다. 민감한 값을 적지 마세요.").font(.sans(11)).foregroundStyle(t.ink3).padding(.top, 5)
         }
     }
 
@@ -185,12 +185,15 @@ struct TextEditorField: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
+                // Match the TextEditor's glyph origin: its 8pt leading padding
+                // plus NSTextContainer's default 5pt lineFragmentPadding, and the
+                // same 8pt top as the editor's vertical padding.
                 Text(placeholder).font(mono ? .mono(12.5) : .sans(13)).foregroundStyle(t.ink3)
-                    .padding(.horizontal, 12).padding(.top, 9).allowsHitTesting(false)
+                    .padding(.leading, 13).padding(.trailing, 12).padding(.top, 8).allowsHitTesting(false)
             }
             TextEditor(text: $text)
                 .font(mono ? .mono(12.5) : .sans(13)).scrollContentBackground(.hidden)
-                .padding(.horizontal, 8).padding(.vertical, 2)
+                .padding(.horizontal, 8).padding(.vertical, 8)
         }
         .frame(height: height)
         .background(RoundedRectangle(cornerRadius: 8).fill(t.field).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(t.lineStrong, lineWidth: 1)))

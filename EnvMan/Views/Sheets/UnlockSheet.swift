@@ -31,7 +31,7 @@ struct UnlockSheet: View {
 
     private var passwordContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("금고 잠금 해제").font(.sans(17, .bold)).foregroundStyle(t.ink)
+            Text("잠금 해제").font(.sans(17, .bold)).foregroundStyle(t.ink)
             Text(reason).font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(2).padding(.top, 5)
 
             SecureField("마스터 비밀번호", text: $pw).font(.mono(14)).frame(height: 36).fieldBG(focused)
@@ -59,7 +59,7 @@ struct UnlockSheet: View {
     private var recoveryContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("복구 키로 재설정").font(.sans(17, .bold)).foregroundStyle(t.ink)
-            Text("온보딩에서 받은 복구 키를 입력하고 새 비밀번호를 정하세요. 재설정하면 새 복구 키가 발급되고 이전 키는 무효가 됩니다.")
+            Text("복구 키를 입력하고 새 비밀번호를 정하세요. 재설정하면 새 복구 키가 발급되고 이전 키는 무효가 됩니다.")
                 .font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(2).padding(.top, 5)
 
             FieldLabel(text: "복구 키", color: t.ink2).padding(.top, 18).padding(.bottom, 6)
