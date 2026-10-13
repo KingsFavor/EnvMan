@@ -43,6 +43,7 @@ final class VaultStore {
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var deletedBackup: (nsID: UUID, secret: SecretData, index: Int)?
+    @ObservationIgnored private var deletedBatch: (nsID: UUID, items: [(secret: SecretData, index: Int)])?
 
     var state: State {
         guard vault != nil else { return .uninitialized }
@@ -450,6 +451,36 @@ final class VaultStore {
         let i = min(b.index, vault?.namespaces[ni].secrets.count ?? 0)
         vault?.namespaces[ni].secrets.insert(b.secret, at: i)
         deletedBackup = nil
+        try? persist()
+        toast = nil
+    }
+
+    /// Deletes several secrets at once, with a single undoable toast.
+    func deleteSecrets(namespaceID: UUID, ids: Set<UUID>) {
+        guard let ni = idx(namespaceID), !ids.isEmpty else { return }
+        var removed: [(secret: SecretData, index: Int)] = []
+        for (i, s) in (vault?.namespaces[ni].secrets ?? []).enumerated() where ids.contains(s.id) {
+            removed.append((s, i))
+        }
+        guard !removed.isEmpty else { return }
+        // Remove from the back so earlier indices stay valid.
+        for item in removed.sorted(by: { $0.index > $1.index }) {
+            vault?.namespaces[ni].secrets.remove(at: item.index)
+        }
+        deletedBatch = (namespaceID, removed)
+        try? persist()
+        let count = removed.count
+        showToast(Toast(icon: "trash-2", title: "\(count)개 삭제됨", kind: .undo, undo: { [weak self] in self?.undoBatchDelete() }))
+    }
+
+    private func undoBatchDelete() {
+        guard let b = deletedBatch, let ni = idx(b.nsID) else { return }
+        // Reinsert from the front so each original index lands correctly.
+        for item in b.items.sorted(by: { $0.index < $1.index }) {
+            let i = min(item.index, vault?.namespaces[ni].secrets.count ?? 0)
+            vault?.namespaces[ni].secrets.insert(item.secret, at: i)
+        }
+        deletedBatch = nil
         try? persist()
         toast = nil
     }

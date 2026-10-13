@@ -42,6 +42,7 @@ struct CopyPanel: View {
                 Text("\(ui.selected.count)개 선택됨").font(.sans(12)).foregroundStyle(t.ink2)
             }
             Spacer()
+            IconButton(icon: "trash-2", size: 28, fontSize: 14, help: "선택한 키 삭제") { deleteSelected() }
             IconButton(icon: "x", size: 28, fontSize: 15, help: "선택 해제") { ui.selected.removeAll() }
         }
         .padding(.leading, 18).padding(.trailing, 14).padding(.bottom, 10)
@@ -168,6 +169,15 @@ struct CopyPanel: View {
     private func copy() {
         guard let text = renderReal() else { ui.sheet = .unlock(reason: "값을 복사하려면 잠금을 해제하세요."); return }
         store.copyToClipboard(text, title: "\(ui.selected.count)개를 \(ui.format.label) 형식으로 복사")
+    }
+
+    private func deleteSelected() {
+        let ids = ui.selected
+        guard !ids.isEmpty else { return }
+        store.deleteSecrets(namespaceID: namespaceID, ids: ids)
+        ui.selected.removeAll()
+        ui.revealed.subtract(ids)
+        for id in ids { ui.revealedValues[id] = nil }
     }
 
     private func save() {
