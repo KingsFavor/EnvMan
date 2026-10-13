@@ -14,6 +14,22 @@ final class AppSettings {
 
     var appearance: Appearance { didSet { d.set(appearance.rawValue, forKey: K.appearance) } }
 
+    /// Last-used `gh secret set` form values, kept per namespace so each one
+    /// remembers its own repo/org, environment and target. Not sensitive.
+    private var ghByNamespace: [String: GHOptions]
+
+    func ghOptions(for id: UUID) -> GHOptions { ghByNamespace[id.uuidString] ?? GHOptions() }
+
+    func setGHOptions(_ options: GHOptions, for id: UUID) {
+        ghByNamespace[id.uuidString] = options
+        if let data = try? JSONEncoder().encode(ghByNamespace) { d.set(data, forKey: K.gh) }
+    }
+
+    func forgetGHOptions(for id: UUID) {
+        guard ghByNamespace.removeValue(forKey: id.uuidString) != nil else { return }
+        if let data = try? JSONEncoder().encode(ghByNamespace) { d.set(data, forKey: K.gh) }
+    }
+
     static let sessionPresets: [(label: String, seconds: Int)] = [
         ("5분", 300), ("15분", 900), ("30분", 1800), ("1시간", 3600),
     ]
@@ -30,6 +46,7 @@ final class AppSettings {
         static let lockResign = "lock.onResign"
         static let lockClose = "lock.onWindowClose"
         static let appearance = "appearance"
+        static let gh = "gh.optionsByNamespace"
     }
 
     init() {
@@ -41,5 +58,6 @@ final class AppSettings {
         lockOnResign = d.object(forKey: K.lockResign) as? Bool ?? false
         lockOnWindowClose = d.object(forKey: K.lockClose) as? Bool ?? false
         appearance = Appearance(rawValue: d.string(forKey: K.appearance) ?? "") ?? .system
+        ghByNamespace = (d.data(forKey: K.gh)).flatMap { try? JSONDecoder().decode([String: GHOptions].self, from: $0) } ?? [:]
     }
 }

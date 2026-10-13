@@ -332,6 +332,7 @@ final class VaultStore {
 
     func deleteNamespace(id: UUID) {
         vault?.namespaces.removeAll { $0.id == id }
+        settings.forgetGHOptions(for: id)
         try? persist()
     }
 
@@ -360,6 +361,7 @@ final class VaultStore {
             SecretData(key: $0.key, value: $0.value, memo: $0.memo, created: now, updated: now)
         }
         vault?.namespaces.insert(copy, at: i + 1)
+        settings.setGHOptions(settings.ghOptions(for: id), for: copy.id)
         try? persist()
         return copy.id
     }

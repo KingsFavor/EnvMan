@@ -33,6 +33,10 @@ struct CopyPanel: View {
         }
         .frame(width: 340)
         .background(t.surface)
+        // Remember the gh command form per namespace: load this namespace's last
+        // values when the panel opens, and save whenever the fields change.
+        .onAppear { ui.gh = settings.ghOptions(for: namespaceID) }
+        .onChange(of: ui.gh) { _, new in settings.setGHOptions(new, for: namespaceID) }
     }
 
     private var headerRow: some View {

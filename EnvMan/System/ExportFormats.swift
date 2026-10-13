@@ -17,8 +17,8 @@ enum CopyFormat: String, CaseIterable, Identifiable {
 }
 
 /// Options for the `gh secret set` command form.
-struct GHOptions: Equatable {
-    enum Target: String, CaseIterable, Identifiable {
+struct GHOptions: Equatable, Codable {
+    enum Target: String, CaseIterable, Identifiable, Codable {
         case actions = "actions"
         case codespaces = "codespaces"
         case dependabot = "dependabot"
