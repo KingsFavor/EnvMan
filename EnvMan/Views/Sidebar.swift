@@ -14,6 +14,7 @@ struct Sidebar: View {
     @State private var settingsHover = false
     @State private var lockHover = false
     @State private var unlockHover = false
+    @State private var extendHover = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -153,17 +154,25 @@ struct Sidebar: View {
                     Capsule().fill(t.accent).frame(width: geo.size.width * store.sessionPct / 100, height: 3)
                 }
             }.frame(height: 3)
-            HStack {
+            HStack(spacing: 6) {
                 Text("자동 잠금까지").font(.sans(11)).foregroundStyle(t.ink2)
                 Spacer()
-                Button { store.lock(); ui.onLock() } label: {
-                    HStack(spacing: 5) {
-                        Text("바로 잠그기").font(.sans(11, .semibold)).foregroundStyle(t.ink)
-                        Text("⌘L").font(.sans(11)).foregroundStyle(t.ink3)
+                Button { store.touchSession() } label: {
+                    HStack(spacing: 4) {
+                        lucide("refresh-cw").font(.system(size: 10))
+                        Text("연장").font(.sans(11, .semibold))
                     }
+                    .foregroundStyle(t.accentText)
                     .padding(.horizontal, 8).frame(height: 24)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(lockHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(t.lineStrong, lineWidth: 1)))
-                }.buttonStyle(.plain).onHover { lockHover = $0 }
+                    .background(RoundedRectangle(cornerRadius: 6).fill(extendHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(t.lineStrong, lineWidth: 1)))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).onHover { extendHover = $0 }.help("세션 시간을 다시 늘립니다")
+                Button { store.lock(); ui.onLock() } label: {
+                    Text("바로 잠그기").font(.sans(11, .semibold)).foregroundStyle(t.ink)
+                        .padding(.horizontal, 8).frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(lockHover ? t.hover : t.surface).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(t.lineStrong, lineWidth: 1)))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).onHover { lockHover = $0 }.help("지금 바로 잠급니다 (⌘L)")
             }
         }
         .padding(EdgeInsets(top: 12, leading: 12, bottom: 10, trailing: 12))

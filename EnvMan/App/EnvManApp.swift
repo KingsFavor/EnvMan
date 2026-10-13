@@ -49,6 +49,9 @@ struct AppCommands: Commands {
             Button("잠금 해제…") { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.") }
                 .keyboardShortcut("u", modifiers: .command)
                 .disabled(store.state != .locked)
+            Button("세션 연장") { store.touchSession() }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(!store.isUnlocked)
             Button("바로 잠그기") { store.lock(); ui.onLock() }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(!store.isUnlocked)

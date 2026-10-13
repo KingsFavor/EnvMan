@@ -275,6 +275,7 @@ final class VaultStore {
         let start = Date()
         sessionStart = start
         sessionExpiry = start.addingTimeInterval(TimeInterval(settings.sessionSeconds))
+        now = start
     }
 
     // Session display
