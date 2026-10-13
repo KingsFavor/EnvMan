@@ -23,6 +23,11 @@ final class VaultStore {
     }
 
     private(set) var vault: VaultFile?
+    /// Observed mirror of "is there a live session" (`dek != nil`). The DEK itself
+    /// is @ObservationIgnored so it never drives the view graph (and so changing it
+    /// cannot leak through diffing); this flag is what views observe for lock state.
+    /// Kept in lockstep with `dek`: set in startSession(), cleared in lock().
+    private(set) var sessionActive = false
     private(set) var sessionStart: Date?
     private(set) var sessionExpiry: Date?
     /// Updated every second while unlocked, to drive countdowns.
@@ -41,9 +46,9 @@ final class VaultStore {
 
     var state: State {
         guard vault != nil else { return .uninitialized }
-        return dek == nil ? .locked : .unlocked
+        return sessionActive ? .unlocked : .locked
     }
-    var isUnlocked: Bool { dek != nil }
+    var isUnlocked: Bool { sessionActive }
 
     init(settings: AppSettings = AppSettings()) {
         self.settings = settings
@@ -249,6 +254,7 @@ final class VaultStore {
 
     func lock() {
         dek = nil
+        sessionActive = false
         sessionStart = nil
         sessionExpiry = nil
         tickTask?.cancel(); tickTask = nil
@@ -256,6 +262,7 @@ final class VaultStore {
 
     private func startSession() {
         let start = Date()
+        sessionActive = true
         sessionStart = start
         sessionExpiry = start.addingTimeInterval(TimeInterval(settings.sessionSeconds))
         now = start
