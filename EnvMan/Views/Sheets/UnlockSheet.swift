@@ -13,6 +13,7 @@ struct UnlockSheet: View {
     @State private var error: String?
     @State private var recKey = ""
     @State private var recPw = ""
+    @State private var working = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -35,7 +36,7 @@ struct UnlockSheet: View {
             Text(reason).font(.sans(12.5)).foregroundStyle(t.ink2).lineSpacing(2).padding(.top, 5)
 
             SecureField("마스터 비밀번호", text: $pw).font(.mono(14)).frame(height: 36).fieldBG(focused)
-                .focused($focused).padding(.top, 18).onSubmit(submit)
+                .focused($focused).padding(.top, 18).onSubmit(submit).disabled(working)
 
             if let error {
                 HStack(spacing: 6) {
@@ -46,11 +47,11 @@ struct UnlockSheet: View {
 
             HStack {
                 Button("비밀번호를 잊었나요?") { recoveryMode = true; error = nil }
-                    .buttonStyle(.plain).font(.sans(12)).foregroundStyle(t.accentText)
+                    .buttonStyle(.plain).font(.sans(12)).foregroundStyle(t.accentText).disabled(working)
                 Spacer()
                 HStack(spacing: 8) {
                     GhostButton(title: "취소") { dismiss() }
-                    AccentButton(title: "잠금 해제", disabled: pw.isEmpty, action: submit)
+                    AccentButton(title: working ? "해제 중…" : "잠금 해제", disabled: pw.isEmpty, loading: working, action: submit)
                 }
             }.padding(.top, 22)
         }
@@ -76,24 +77,40 @@ struct UnlockSheet: View {
             HStack {
                 GhostButton(title: "돌아가기") { recoveryMode = false; error = nil }
                 Spacer()
-                AccentButton(title: "재설정하고 열기", disabled: recKey.isEmpty || recPw.count < 8, action: submitRecovery)
+                AccentButton(title: working ? "재설정 중…" : "재설정하고 열기", disabled: recKey.isEmpty || recPw.count < 8, loading: working, action: submitRecovery)
             }.padding(.top, 22)
         }
     }
 
     private func submit() {
-        guard !pw.isEmpty else { return }
-        do { try store.unlock(masterPassword: pw); dismiss() }
-        catch { self.error = (error as? LocalizedError)?.errorDescription ?? "해제에 실패했습니다."; pw = "" }
+        guard !pw.isEmpty, !working else { return }
+        error = nil
+        working = true
+        Task {
+            do {
+                try await store.unlockAsync(masterPassword: pw)
+                dismiss()
+            } catch {
+                self.error = (error as? LocalizedError)?.errorDescription ?? "해제에 실패했습니다."
+                pw = ""
+                working = false
+            }
+        }
     }
 
     private func submitRecovery() {
-        do {
-            _ = try store.resetWithRecoveryKey(recKey, newPassword: recPw)
-            dismiss()
-            store.showToast(.init(icon: "circle-check", title: "비밀번호를 재설정했습니다", sub: "설정에서 새 복구 키를 확인하세요."))
-        } catch {
-            self.error = "복구 키가 올바르지 않습니다."
+        guard !recKey.isEmpty, recPw.count >= 8, !working else { return }
+        error = nil
+        working = true
+        Task {
+            do {
+                _ = try await store.resetWithRecoveryKeyAsync(recKey, newPassword: recPw)
+                dismiss()
+                store.showToast(.init(icon: "circle-check", title: "비밀번호를 재설정했습니다", sub: "설정에서 새 복구 키를 확인하세요."))
+            } catch {
+                self.error = "복구 키가 올바르지 않습니다."
+                working = false
+            }
         }
     }
 }

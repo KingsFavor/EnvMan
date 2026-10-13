@@ -119,6 +119,22 @@ final class VaultStore {
         startSession()
     }
 
+    /// Same as `unlock`, but the slow PBKDF2 stretch runs off the main actor so
+    /// the UI can show progress instead of freezing. State is applied on return
+    /// (back on the main actor), so callers can `await` and then update the view.
+    func unlockAsync(masterPassword: String) async throws {
+        guard let vault else { throw CryptoError.corrupted }
+        let salt = vault.kdf.salt
+        let iterations = vault.kdf.iterations
+        let wrapped = vault.wrappedDEK
+        let raw = try await Task.detached(priority: .userInitiated) {
+            let kek = Crypto.deriveKey(password: masterPassword, salt: salt, iterations: iterations)
+            return try Crypto.open(wrapped, key: kek)
+        }.value
+        dek = SymmetricKey(data: raw)
+        startSession()
+    }
+
     /// Checks the master password without changing session state. Used to gate
     /// destructive actions (for example, full reset) behind the password.
     func verifyMasterPassword(_ password: String) -> Bool {
@@ -150,6 +166,52 @@ final class VaultStore {
         dek = dataKey
         startSession()
         return newRecovery
+    }
+
+    /// Async form of `resetWithRecoveryKey`: the three PBKDF2 stretches run off
+    /// the main actor, then the new wrapped keys are applied on the main actor.
+    @discardableResult
+    func resetWithRecoveryKeyAsync(_ recoveryKey: String, newPassword: String) async throws -> String {
+        guard let current = vault else { throw CryptoError.corrupted }
+        let recSalt = current.recoveryKDF.salt
+        let recIter = current.recoveryKDF.iterations
+        let wrappedRec = current.wrappedDEKRecovery
+
+        struct Reset: Sendable {
+            let kdf: KDFParams, wrappedDEK: Data
+            let recoveryKDF: KDFParams, wrappedDEKRecovery: Data
+            let dekRaw: Data, newRecovery: String
+        }
+
+        let r = try await Task.detached(priority: .userInitiated) { () -> Reset in
+            let rKey = Crypto.deriveKey(password: RecoveryKey.normalize(recoveryKey), salt: recSalt, iterations: recIter)
+            let raw = try Crypto.open(wrappedRec, key: rKey)
+            let dataKey = SymmetricKey(data: raw)
+
+            let salt = try Crypto.randomData(16)
+            let kek = Crypto.deriveKey(password: newPassword, salt: salt, iterations: Crypto.defaultIterations)
+            let wrappedDEK = try Crypto.seal(dataKey.raw, key: kek)
+
+            let newRecovery = RecoveryKey.generate()
+            let rSalt = try Crypto.randomData(16)
+            let newRKey = Crypto.deriveKey(password: RecoveryKey.normalize(newRecovery), salt: rSalt, iterations: Crypto.defaultIterations)
+            let wrappedDEKRecovery = try Crypto.seal(dataKey.raw, key: newRKey)
+
+            return Reset(kdf: KDFParams(salt: salt, iterations: Crypto.defaultIterations), wrappedDEK: wrappedDEK,
+                         recoveryKDF: KDFParams(salt: rSalt, iterations: Crypto.defaultIterations), wrappedDEKRecovery: wrappedDEKRecovery,
+                         dekRaw: raw, newRecovery: newRecovery)
+        }.value
+
+        var v = current
+        v.kdf = r.kdf
+        v.wrappedDEK = r.wrappedDEK
+        v.recoveryKDF = r.recoveryKDF
+        v.wrappedDEKRecovery = r.wrappedDEKRecovery
+        self.vault = v
+        try persist()
+        dek = SymmetricKey(data: r.dekRaw)
+        startSession()
+        return r.newRecovery
     }
 
     func changeMasterPassword(current: String, new: String) throws {

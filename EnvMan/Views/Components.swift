@@ -14,28 +14,35 @@ struct AccentButton: View {
     var hpad: CGFloat = 16
     var fontSize: CGFloat = 13
     var disabled: Bool = false
+    var loading: Bool = false
     let action: () -> Void
     @State private var hover = false
+
+    private var isOff: Bool { disabled || loading }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let icon { lucide(icon).font(.system(size: fontSize)) }
+                if loading {
+                    ProgressView().controlSize(.small).scaleEffect(0.7).tint(t.accentInk).frame(width: fontSize, height: fontSize)
+                } else if let icon {
+                    lucide(icon).font(.system(size: fontSize))
+                }
                 Text(title).font(.sans(fontSize, .semibold))
-                if let shortcut { Text(shortcut).font(.sans(fontSize - 1.5)).opacity(0.7) }
+                if let shortcut, !loading { Text(shortcut).font(.sans(fontSize - 1.5)).opacity(0.7) }
             }
             .foregroundStyle(t.accentInk)
             .padding(.horizontal, hpad)
             .frame(height: height)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.accent)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(hover && !disabled ? 0.1 : 0)))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(hover && !isOff ? 0.1 : 0)))
             )
             .opacity(disabled ? 0.5 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
+        .disabled(isOff)
         .onHover { hover = $0 }
     }
 }
