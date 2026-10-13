@@ -202,6 +202,22 @@ struct ManualSheet: View {
         step(4, "지금 열려 있는 세션의 메모리 기록까지 비우려면 셸을 다시 시작합니다.")
         codeBlock("exec zsh")
 
+        subhead("비웠는데도 ↑ 위 화살표로 계속 나와요 (zsh)")
+        p("zsh는 지금 열려 있는 세션의 기록을 메모리에 따로 들고 있습니다. ~/.zsh_history 파일만 비워도 실행 중인 셸의 메모리에는 그대로 남아 있어서, 위 화살표를 누르면 다시 보입니다. 게다가 그 세션을 닫을 때 메모리의 기록을 파일에 다시 써 넣기 때문에, 비워 둔 파일이 도로 채워집니다. 그래서 아래 세 단계를 한 세션에서 함께 해야 합니다.")
+        step(1, "기록 파일을 비웁니다.")
+        codeBlock(": > ~/.zsh_history")
+        step(2, "지금 세션의 메모리 기록을 비웁니다. zsh에는 bash의 history -c가 없으니, HISTSIZE를 0으로 줄였다가 원래 값으로 되돌립니다. (아래 10000은 평소 쓰던 값으로 바꾸세요.)")
+        codeBlock("HISTSIZE=0 && HISTSIZE=10000")
+        step(3, "셸을 새로 띄워 파일과 메모리를 맞춥니다.")
+        codeBlock("exec zsh")
+        bullet("파일만 비우고 2번을 건너뛴 채 세션을 그냥 닫으면, 닫는 순간 메모리 기록이 파일에 다시 써집니다.")
+
+        subhead("iTerm2를 쓴다면 자체 기록도 확인하세요")
+        p("iTerm2에 Shell Integration을 설치했다면, 위 화살표(셸 기록)와 별개로 iTerm2가 명령 기록을 따로 보관합니다. 자동완성 팝업이나 Command History 목록에서 값이 다시 보일 수 있습니다.")
+        bullet("View 메뉴 > Toolbelt > Command History를 열어 해당 항목을 지우거나 목록을 비웁니다.")
+        bullet("Settings > General에서 명령 기록을 디스크에 저장하는 옵션이 켜져 있는지 확인하세요. 저장 파일은 ~/Library/Application Support/iTerm2/ 아래에 있습니다.")
+        bullet("화면에 보이는 출력(스크롤백)은 ⌘K로 지우고, 민감하면 탭이나 창을 닫으세요.")
+
         subhead("bash")
         bullet("특정 줄 삭제: history 로 번호(N)를 확인한 뒤 history -d N")
         bullet("현재 세션 메모리 기록 비우기: history -c")

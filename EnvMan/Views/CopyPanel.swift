@@ -10,8 +10,22 @@ struct CopyPanel: View {
 
     let namespaceID: UUID
 
+    @State private var showConflict = false
+    @State private var pendingCopy: PendingCopy?
+
+    private struct PendingCopy: Identifiable {
+        let id = UUID()
+        let target: UUID
+        let targetPath: String
+        let conflicts: [String]
+    }
+
     private var selectedSecrets: [SecretData] {
         (store.namespace(namespaceID)?.secrets ?? []).filter { ui.selected.contains($0.id) }
+    }
+
+    private var otherNamespaces: [NamespaceData] {
+        (store.vault?.namespaces ?? []).filter { $0.id != namespaceID }
     }
 
     var body: some View {
@@ -46,10 +60,36 @@ struct CopyPanel: View {
                 Text("\(ui.selected.count)개 선택됨").font(.sans(12)).foregroundStyle(t.ink2)
             }
             Spacer()
+            copyToNamespaceMenu
             IconButton(icon: "trash-2", size: 28, fontSize: 14, help: "선택한 키 삭제") { deleteSelected() }
             IconButton(icon: "x", size: 28, fontSize: 15, help: "선택 해제") { ui.selected.removeAll() }
         }
         .padding(.leading, 18).padding(.trailing, 14).padding(.bottom, 10)
+        .confirmationDialog("이름이 겹치는 키가 있습니다", isPresented: $showConflict, presenting: pendingCopy) { pc in
+            Button("덮어쓰고 복사", role: .destructive) { performCopy(target: pc.target, path: pc.targetPath, overwrite: true) }
+            Button("겹치는 키는 건너뛰기") { performCopy(target: pc.target, path: pc.targetPath, overwrite: false) }
+            Button("취소", role: .cancel) {}
+        } message: { pc in
+            Text("‘\(pc.targetPath)’에 같은 이름의 키가 이미 있습니다: \(pc.conflicts.joined(separator: ", "))")
+        }
+    }
+
+    private var copyToNamespaceMenu: some View {
+        Menu {
+            if otherNamespaces.isEmpty {
+                Text("다른 네임스페이스가 없습니다")
+            } else {
+                ForEach(otherNamespaces) { ns in
+                    Button(ns.path) { startCopyTo(ns) }
+                }
+            }
+        } label: {
+            lucide("folder-input").font(.system(size: 14)).foregroundStyle(t.ink3)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+        .help("선택한 키를 다른 네임스페이스로 복사")
     }
 
     private var chips: some View {
@@ -182,6 +222,24 @@ struct CopyPanel: View {
         ui.selected.removeAll()
         ui.revealed.subtract(ids)
         for id in ids { ui.revealedValues[id] = nil }
+    }
+
+    private func startCopyTo(_ ns: NamespaceData) {
+        guard !ui.selected.isEmpty else { return }
+        let conflicts = store.conflictingKeys(ids: ui.selected, from: namespaceID, to: ns.id)
+        if conflicts.isEmpty {
+            performCopy(target: ns.id, path: ns.path, overwrite: false)
+        } else {
+            pendingCopy = PendingCopy(target: ns.id, targetPath: ns.path, conflicts: conflicts)
+            showConflict = true
+        }
+    }
+
+    private func performCopy(target: UUID, path: String, overwrite: Bool) {
+        let r = store.copySecrets(ids: ui.selected, from: namespaceID, to: target, overwrite: overwrite)
+        let title = r.copied > 0 ? "\(r.copied)개를 ‘\(path)’로 복사했습니다" : "복사한 키가 없습니다"
+        let sub = r.skipped > 0 ? "이름이 겹치는 \(r.skipped)개는 건너뛰었습니다" : nil
+        store.showToast(VaultStore.Toast(icon: "folder-input", title: title, sub: sub))
     }
 
     private func save() {

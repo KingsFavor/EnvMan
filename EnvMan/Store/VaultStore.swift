@@ -487,6 +487,46 @@ final class VaultStore {
         toast = nil
     }
 
+    /// Keys among `ids` in `source` that already exist in `target`. Used to warn
+    /// before copying across namespaces.
+    func conflictingKeys(ids: Set<UUID>, from source: UUID, to target: UUID) -> [String] {
+        guard let si = idx(source), let ti = idx(target), source != target else { return [] }
+        let picked = (vault?.namespaces[si].secrets ?? []).filter { ids.contains($0.id) }
+        let targetKeys = Set((vault?.namespaces[ti].secrets ?? []).map { $0.key })
+        return picked.map { $0.key }.filter { targetKeys.contains($0) }
+    }
+
+    /// Copies the chosen secrets into another namespace. Values are ciphertext
+    /// under the same vault DEK, so they copy verbatim without re-encryption and
+    /// this works whether or not the vault is unlocked. On a key-name clash the
+    /// existing key is overwritten when `overwrite` is true, otherwise skipped.
+    @discardableResult
+    func copySecrets(ids: Set<UUID>, from source: UUID, to target: UUID, overwrite: Bool) -> (copied: Int, skipped: Int) {
+        guard source != target, let si = idx(source), let ti = idx(target),
+              let srcSecrets = vault?.namespaces[si].secrets else { return (0, 0) }
+        let picked = srcSecrets.filter { ids.contains($0.id) }
+        guard !picked.isEmpty else { return (0, 0) }
+        let now = Date()
+        var copied = 0, skipped = 0
+        for s in picked {
+            if let ei = vault?.namespaces[ti].secrets.firstIndex(where: { $0.key == s.key }) {
+                guard overwrite else { skipped += 1; continue }
+                vault?.namespaces[ti].secrets[ei].value = s.value
+                vault?.namespaces[ti].secrets[ei].memo = s.memo
+                vault?.namespaces[ti].secrets[ei].updated = now
+                copied += 1
+            } else {
+                vault?.namespaces[ti].secrets.append(SecretData(key: s.key, value: s.value, memo: s.memo, created: now, updated: now))
+                copied += 1
+            }
+        }
+        if copied > 0 {
+            vault?.namespaces[ti].updated = now
+            try? persist()
+        }
+        return (copied, skipped)
+    }
+
     func plainSecrets(namespaceID: UUID, ids: Set<UUID>? = nil) throws -> [PlainSecret] {
         guard let dek, let ni = idx(namespaceID), let vault else { return [] }
         return try vault.namespaces[ni].secrets
