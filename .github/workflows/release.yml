@@ -141,20 +141,30 @@ jobs:
             --key-id "$NOTARY_KEY_ID" \
             --issuer "$NOTARY_ISSUER_ID" \
             --wait
-          xcrun stapler staple "$DMG"
-          # `stapler validate` re-checks the ticket against Apple's CloudKit
-          # endpoint over the network and intermittently fails on the runner
-          # ("The network connection was lost", error 68). The staple above has
-          # already attached the ticket, so retry a few times and, if the network
-          # still won't confirm, warn instead of failing the release.
+          # Both `stapler staple` and `stapler validate` fetch the ticket from
+          # Apple's CloudKit endpoint over the network and intermittently fail on
+          # the runner ("The network connection was lost", error 68) even though
+          # the submission above was Accepted. Retry the staple a few times, then
+          # confirm with validate (also retried), and only warn if the network
+          # still won't cooperate. Running `set -e` would otherwise abort here.
           stapled=0
           for i in 1 2 3 4 5; do
-            if xcrun stapler validate "$DMG"; then stapled=1; break; fi
-            echo "stapler validate attempt $i failed; retrying in 15s..."
+            if xcrun stapler staple "$DMG"; then stapled=1; break; fi
+            echo "stapler staple attempt $i failed; retrying in 15s..."
             sleep 15
           done
-          if [ "$stapled" != "1" ]; then
-            echo "::warning::stapler validate could not confirm over the network; the DMG was notarized (Accepted) and stapled, so shipping anyway."
+          if [ "$stapled" = "1" ]; then
+            validated=0
+            for i in 1 2 3 4 5; do
+              if xcrun stapler validate "$DMG"; then validated=1; break; fi
+              echo "stapler validate attempt $i failed; retrying in 15s..."
+              sleep 15
+            done
+            if [ "$validated" != "1" ]; then
+              echo "::warning::stapler validate could not confirm over the network; the DMG was notarized (Accepted) and stapled, so shipping anyway."
+            fi
+          else
+            echo "::warning::stapler staple could not reach Apple CloudKit after retries; the DMG was notarized (Accepted). Shipping without a stapled ticket (Gatekeeper verifies online on first launch)."
           fi
           spctl -a -t open --context context:primary-signature -vv "$DMG" || true
 
