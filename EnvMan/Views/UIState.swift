@@ -83,6 +83,18 @@ final class UIState {
     var previewShowValues = false
     var sheet: ActiveSheet?
 
+    /// An action waiting on a successful unlock. When a task needs the vault
+    /// open (e.g. opening the edit sheet), it stashes the follow-up here and
+    /// shows the unlock sheet; the unlock sheet runs it once the vault opens,
+    /// and clears it if the sheet is dismissed without unlocking.
+    @ObservationIgnored var pendingAfterUnlock: (() -> Void)?
+
+    /// Shows the unlock sheet and remembers `action` to run once unlocked.
+    func requireUnlock(reason: String, then action: @escaping () -> Void) {
+        pendingAfterUnlock = action
+        sheet = .unlock(reason: reason)
+    }
+
     func selectNamespace(_ id: UUID?) {
         selectedNamespace = id
         selected.removeAll()

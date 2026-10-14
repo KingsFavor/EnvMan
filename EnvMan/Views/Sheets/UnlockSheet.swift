@@ -4,6 +4,7 @@ struct UnlockSheet: View {
     @Environment(\.theme) private var t
     @Environment(\.dismiss) private var dismiss
     @Environment(VaultStore.self) private var store
+    @Environment(UIState.self) private var ui
 
     let reason: String
     var startInRecovery: Bool = false
@@ -28,6 +29,9 @@ struct UnlockSheet: View {
         .frame(width: 440)
         .background(t.surface)
         .onAppear { recoveryMode = startInRecovery; DispatchQueue.main.async { focused = true } }
+        // If the sheet closes without a successful unlock (Cancel, Esc, click
+        // outside), drop any action that was waiting on the unlock.
+        .onDisappear { ui.pendingAfterUnlock = nil }
     }
 
     private var passwordContent: some View {
@@ -89,13 +93,24 @@ struct UnlockSheet: View {
         Task {
             do {
                 try await store.unlockAsync(masterPassword: pw)
-                dismiss()
+                resumeAfterUnlock()
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription ?? "해제에 실패했습니다."
                 pw = ""
                 working = false
             }
         }
+    }
+
+    /// Closes the unlock sheet and runs the action that was waiting on unlock.
+    /// The follow-up often opens another sheet, so it runs on the next runloop
+    /// tick, after this sheet has finished dismissing, to avoid dropping it.
+    private func resumeAfterUnlock() {
+        let pending = ui.pendingAfterUnlock
+        ui.pendingAfterUnlock = nil
+        dismiss()
+        guard let pending else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { pending() }
     }
 
     private func submitRecovery() {
@@ -105,8 +120,8 @@ struct UnlockSheet: View {
         Task {
             do {
                 _ = try await store.resetWithRecoveryKeyAsync(recKey, newPassword: recPw)
-                dismiss()
                 store.showToast(.init(icon: "circle-check", title: "비밀번호를 재설정했습니다", sub: "설정에서 새 복구 키를 확인하세요."))
+                resumeAfterUnlock()
             } catch {
                 self.error = "복구 키가 올바르지 않습니다."
                 working = false

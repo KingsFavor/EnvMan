@@ -211,7 +211,7 @@ struct CopyPanel: View {
     }
 
     private func copy() {
-        guard let text = renderReal() else { ui.sheet = .unlock(reason: "값을 복사하려면 잠금을 해제하세요."); return }
+        guard let text = renderReal() else { ui.requireUnlock(reason: "값을 복사하려면 잠금을 해제하세요.", then: copy); return }
         store.copyToClipboard(text, title: "\(ui.selected.count)개를 \(ui.format.label) 형식으로 복사")
     }
 
@@ -243,7 +243,7 @@ struct CopyPanel: View {
     }
 
     private func save() {
-        guard let text = renderReal() else { ui.sheet = .unlock(reason: "값을 저장하려면 잠금을 해제하세요."); return }
+        guard let text = renderReal() else { ui.requireUnlock(reason: "값을 저장하려면 잠금을 해제하세요.", then: save); return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = ui.format == .json ? "secrets.json" : (ui.format == .dotenv ? ".env" : "secrets.txt")
         panel.begin { resp in

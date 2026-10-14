@@ -202,6 +202,7 @@ struct DetailView: View {
 
     private func openAdd() { requireUnlock { ui.sheet = .add } }
     private func requireUnlock(_ action: @escaping () -> Void) {
-        if store.isUnlocked { action() } else { ui.sheet = .unlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.") }
+        if store.isUnlocked { action() }
+        else { ui.requireUnlock(reason: "값을 보거나 복사하려면 비밀번호를 입력하세요.", then: action) }
     }
 }

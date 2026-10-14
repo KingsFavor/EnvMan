@@ -40,7 +40,7 @@ struct AppCommands: Commands {
         }
         CommandGroup(replacing: .newItem) {
             Button("시크릿 추가…") {
-                if store.isUnlocked { ui.sheet = .add } else { ui.sheet = .unlock(reason: "시크릿을 추가하려면 잠금을 해제하세요.") }
+                if store.isUnlocked { ui.sheet = .add } else { ui.requireUnlock(reason: "시크릿을 추가하려면 잠금을 해제하세요.", then: { ui.sheet = .add }) }
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(store.state == .uninitialized || ui.selectedNamespace == nil)
