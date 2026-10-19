@@ -37,6 +37,8 @@ struct RootView: View {
         case .settings: SettingsSheet()
         case .export: ShareSheet(mode: .export)
         case .importFile: ShareSheet(mode: .importFile)
+        case .exportAll: FullExportSheet(mode: .export)
+        case .importAll: FullExportSheet(mode: .importFile)
         case .changePassword: ChangePasswordSheet()
         case .reissueRecovery: ReissueRecoverySheet()
         case .manual(let topic): ManualSheet(initial: topic)

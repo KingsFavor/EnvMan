@@ -47,6 +47,7 @@ struct SettingsSheet: View {
     @Environment(VaultStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @Environment(UpdateChecker.self) private var updates
+    @Environment(UIState.self) private var ui
 
     @State private var showChange = false
     @State private var showReissue = false
@@ -96,6 +97,19 @@ struct SettingsSheet: View {
                             GhostButton(title: "재발급…", height: 26, hpad: 10, fontSize: 12) { showReissue = true }
                         }
                     }
+                    section("데이터") {
+                        settingRow("모두 내보내기", "네임스페이스 구성과 모든 시크릿을 하나의 암호화 파일로 내보냅니다. 다른 기기에서 그대로 가져올 수 있습니다.") {
+                            GhostButton(title: "내보내기…", height: 26, hpad: 10, fontSize: 12) {
+                                startData { ui.sheet = .exportAll }
+                            }
+                        }
+                        divider
+                        settingRow("모두 가져오기", "다른 곳에서 내보낸 전체 데이터 파일을 여기로 가져옵니다.") {
+                            GhostButton(title: "가져오기…", height: 26, hpad: 10, fontSize: 12) {
+                                startData { ui.sheet = .importAll }
+                            }
+                        }
+                    }
                     section("도움말") {
                         settingRow("매뉴얼", "기능별 사용법을 그림과 함께 안내합니다.") {
                             GhostButton(title: "열기…", height: 26, hpad: 10, fontSize: 12) { manualTopic = nil; showManual = true }
@@ -143,6 +157,13 @@ struct SettingsSheet: View {
         if updates.updateAvailable, let v = updates.latestVersion { return "새 버전 \(v)을(를) 사용할 수 있습니다. 현재 \(BuildInfo.version)." }
         if updates.upToDateNotice { return "최신 버전입니다. 현재 \(BuildInfo.version)." }
         return "현재 \(BuildInfo.version)을(를) 사용 중입니다."
+    }
+
+    /// Full export and import both need the vault open to (de)crypt values. When
+    /// locked, swap Settings for the unlock sheet and run the action once unlocked.
+    private func startData(_ action: @escaping () -> Void) {
+        if store.isUnlocked { action() }
+        else { ui.requireUnlock(reason: "데이터를 내보내거나 가져오려면 비밀번호를 입력하세요.", then: action) }
     }
 
     private var divider: some View { Rectangle().fill(t.lineSoft).frame(height: 1) }

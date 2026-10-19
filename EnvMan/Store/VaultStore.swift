@@ -597,6 +597,101 @@ final class VaultStore {
         }
     }
 
+    // MARK: Full export (whole vault)
+
+    var namespaceCount: Int { vault?.namespaces.count ?? 0 }
+    var totalSecretCount: Int { vault?.namespaces.reduce(0) { $0 + $1.secrets.count } ?? 0 }
+
+    /// Builds an encrypted file holding the entire vault: every namespace with its
+    /// layout, folder color, `gh` form and all secrets (keys, values, memos and
+    /// timestamps). Needs the vault unlocked, since values are decrypted to
+    /// plaintext before being re-sealed under the export password.
+    func exportFullData(password: String) throws -> Data {
+        guard let dek, let vault else { throw CryptoError.wrongPassword }
+        var namespaces: [FullNamespace] = []
+        for ns in vault.namespaces {
+            let secrets = try ns.secrets.map { s in
+                FullSecret(
+                    key: s.key,
+                    value: String(decoding: try Crypto.open(s.value, key: dek), as: UTF8.self),
+                    memo: s.memo, created: s.created, updated: s.updated
+                )
+            }
+            let gh = settings.ghOptions(for: ns.id)
+            namespaces.append(FullNamespace(
+                project: ns.project, env: ns.env, colorHex: ns.colorHex,
+                created: ns.created, updated: ns.updated,
+                gh: gh == GHOptions() ? nil : gh, secrets: secrets
+            ))
+        }
+        let payload = FullExportPayload(appVersion: BuildInfo.version, namespaces: namespaces)
+        return try FullExport.seal(payload: payload, password: password)
+    }
+
+    func previewFullImport(fileData: Data, password: String) throws -> FullExportPayload {
+        try FullExport.open(fileData: fileData, password: password)
+    }
+
+    /// Transplants a full-export payload into this vault. A namespace whose path is
+    /// new is recreated with its layout, color, `gh` form and secrets intact; a
+    /// namespace that already exists has its secrets merged under `policy`. Values
+    /// are re-encrypted with this vault's DEK. Returns how many namespaces were
+    /// created and how many secrets were written.
+    @discardableResult
+    func applyFullImport(_ payload: FullExportPayload, policy: ConflictPolicy) throws -> (namespaces: Int, secrets: Int) {
+        guard let dek, var v = vault else { throw CryptoError.wrongPassword }
+        var newNamespaces = 0, writtenSecrets = 0
+        let now = Date()
+        for fns in payload.namespaces {
+            if let i = v.namespaces.firstIndex(where: { $0.path == fns.path }) {
+                for fs in fns.secrets {
+                    let sealed = try Crypto.seal(Data(fs.value.utf8), key: dek)
+                    if let si = v.namespaces[i].secrets.firstIndex(where: { $0.key == fs.key }) {
+                        switch policy {
+                        case .skip:
+                            continue
+                        case .overwrite:
+                            v.namespaces[i].secrets[si].value = sealed
+                            v.namespaces[i].secrets[si].memo = fs.memo
+                            v.namespaces[i].secrets[si].updated = now
+                        case .keepBoth:
+                            let existing = Set(v.namespaces[i].secrets.map { $0.key })
+                            let key = Self.uniqueKey(fs.key, among: existing)
+                            v.namespaces[i].secrets.append(SecretData(key: key, value: sealed, memo: fs.memo, created: fs.created, updated: fs.updated))
+                        }
+                    } else {
+                        v.namespaces[i].secrets.append(SecretData(key: fs.key, value: sealed, memo: fs.memo, created: fs.created, updated: fs.updated))
+                    }
+                    writtenSecrets += 1
+                }
+                v.namespaces[i].updated = now
+            } else {
+                var ns = NamespaceData(project: fns.project, env: fns.env)
+                ns.colorHex = fns.colorHex
+                ns.created = fns.created
+                ns.updated = fns.updated
+                ns.secrets = try fns.secrets.map { fs in
+                    SecretData(key: fs.key, value: try Crypto.seal(Data(fs.value.utf8), key: dek), memo: fs.memo, created: fs.created, updated: fs.updated)
+                }
+                v.namespaces.append(ns)
+                if let gh = fns.gh { settings.setGHOptions(gh, for: ns.id) }
+                newNamespaces += 1
+                writtenSecrets += ns.secrets.count
+            }
+        }
+        self.vault = v
+        try persist()
+        return (newNamespaces, writtenSecrets)
+    }
+
+    /// `KEY`, then `KEY_2`, `KEY_3` on collision within a given key set.
+    static func uniqueKey(_ key: String, among existing: Set<String>) -> String {
+        if !existing.contains(key) { return key }
+        var n = 2
+        while existing.contains("\(key)_\(n)") { n += 1 }
+        return "\(key)_\(n)"
+    }
+
     // MARK: Clipboard and toast
 
     func copyToClipboard(_ text: String, title: String, sub: String? = nil) {

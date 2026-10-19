@@ -47,6 +47,8 @@ enum ActiveSheet: Identifiable, Equatable {
     case settings
     case export
     case importFile
+    case exportAll
+    case importAll
     case changePassword
     case reissueRecovery
     case manual(ManualTopic?)
@@ -62,6 +64,8 @@ enum ActiveSheet: Identifiable, Equatable {
         case .settings: return "settings"
         case .export: return "export"
         case .importFile: return "import"
+        case .exportAll: return "exportAll"
+        case .importAll: return "importAll"
         case .changePassword: return "changepw"
         case .reissueRecovery: return "reissue"
         case .manual: return "manual"
