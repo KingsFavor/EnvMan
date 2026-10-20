@@ -632,64 +632,35 @@ final class VaultStore {
         try FullExport.open(fileData: fileData, password: password)
     }
 
-    /// Transplants a full-export payload into this vault. A namespace whose path is
-    /// new is recreated with its layout, color, `gh` form and secrets intact; a
-    /// namespace that already exists has its secrets merged under `policy`. Values
-    /// are re-encrypted with this vault's DEK. Returns how many namespaces were
-    /// created and how many secrets were written.
+    /// Restores a full-export payload by replacing the whole vault: every existing
+    /// namespace and secret is discarded and the vault is rebuilt from the file so
+    /// it ends up identical to it (layout, color, `gh` form, memos and timestamps).
+    /// Values are re-encrypted with this vault's DEK. Returns how many namespaces
+    /// and secrets the vault holds afterwards.
     @discardableResult
-    func applyFullImport(_ payload: FullExportPayload, policy: ConflictPolicy) throws -> (namespaces: Int, secrets: Int) {
+    func applyFullImport(_ payload: FullExportPayload) throws -> (namespaces: Int, secrets: Int) {
         guard let dek, var v = vault else { throw CryptoError.wrongPassword }
-        var newNamespaces = 0, writtenSecrets = 0
-        let now = Date()
+        // Forget the `gh` form of every namespace being removed: it is keyed by
+        // namespace id in settings, and those ids do not survive the replace.
+        for ns in v.namespaces { settings.forgetGHOptions(for: ns.id) }
+        var rebuilt: [NamespaceData] = []
+        var writtenSecrets = 0
         for fns in payload.namespaces {
-            if let i = v.namespaces.firstIndex(where: { $0.path == fns.path }) {
-                for fs in fns.secrets {
-                    let sealed = try Crypto.seal(Data(fs.value.utf8), key: dek)
-                    if let si = v.namespaces[i].secrets.firstIndex(where: { $0.key == fs.key }) {
-                        switch policy {
-                        case .skip:
-                            continue
-                        case .overwrite:
-                            v.namespaces[i].secrets[si].value = sealed
-                            v.namespaces[i].secrets[si].memo = fs.memo
-                            v.namespaces[i].secrets[si].updated = now
-                        case .keepBoth:
-                            let existing = Set(v.namespaces[i].secrets.map { $0.key })
-                            let key = Self.uniqueKey(fs.key, among: existing)
-                            v.namespaces[i].secrets.append(SecretData(key: key, value: sealed, memo: fs.memo, created: fs.created, updated: fs.updated))
-                        }
-                    } else {
-                        v.namespaces[i].secrets.append(SecretData(key: fs.key, value: sealed, memo: fs.memo, created: fs.created, updated: fs.updated))
-                    }
-                    writtenSecrets += 1
-                }
-                v.namespaces[i].updated = now
-            } else {
-                var ns = NamespaceData(project: fns.project, env: fns.env)
-                ns.colorHex = fns.colorHex
-                ns.created = fns.created
-                ns.updated = fns.updated
-                ns.secrets = try fns.secrets.map { fs in
-                    SecretData(key: fs.key, value: try Crypto.seal(Data(fs.value.utf8), key: dek), memo: fs.memo, created: fs.created, updated: fs.updated)
-                }
-                v.namespaces.append(ns)
-                if let gh = fns.gh { settings.setGHOptions(gh, for: ns.id) }
-                newNamespaces += 1
-                writtenSecrets += ns.secrets.count
+            var ns = NamespaceData(project: fns.project, env: fns.env)
+            ns.colorHex = fns.colorHex
+            ns.created = fns.created
+            ns.updated = fns.updated
+            ns.secrets = try fns.secrets.map { fs in
+                SecretData(key: fs.key, value: try Crypto.seal(Data(fs.value.utf8), key: dek), memo: fs.memo, created: fs.created, updated: fs.updated)
             }
+            if let gh = fns.gh { settings.setGHOptions(gh, for: ns.id) }
+            rebuilt.append(ns)
+            writtenSecrets += ns.secrets.count
         }
+        v.namespaces = rebuilt
         self.vault = v
         try persist()
-        return (newNamespaces, writtenSecrets)
-    }
-
-    /// `KEY`, then `KEY_2`, `KEY_3` on collision within a given key set.
-    static func uniqueKey(_ key: String, among existing: Set<String>) -> String {
-        if !existing.contains(key) { return key }
-        var n = 2
-        while existing.contains("\(key)_\(n)") { n += 1 }
-        return "\(key)_\(n)"
+        return (rebuilt.count, writtenSecrets)
     }
 
     // MARK: Clipboard and toast

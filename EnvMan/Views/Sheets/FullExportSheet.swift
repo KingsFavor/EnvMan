@@ -24,7 +24,6 @@ struct FullExportSheet: View {
     @State private var imName = ""
     @State private var imPw = ""
     @State private var imPayload: FullExportPayload?
-    @State private var imPolicy: VaultStore.ConflictPolicy = .keepBoth
     @State private var imResult: (namespaces: Int, secrets: Int)?
     @State private var error: String?
 
@@ -141,22 +140,27 @@ struct FullExportSheet: View {
                 if let error { HStack(spacing: 6) { lucide("circle-alert").font(.system(size: 13)); Text(error).font(.sans(12)) }.foregroundStyle(t.danger).padding(.top, 8) }
             }
         case 1:
-            HStack {
-                Text(importSummary).font(.sans(12)).foregroundStyle(t.ink2)
-                Spacer()
-                Seg(options: [(VaultStore.ConflictPolicy.overwrite, "덮어쓰기"), (.skip, "건너뛰기"), (.keepBoth, "둘 다")], selection: $imPolicy, height: 22, fontSize: 11.5).fixedSize()
-            }.padding(.bottom, 10)
-            VStack(spacing: 0) {
-                ForEach(Array((imPayload?.namespaces ?? []).prefix(60).enumerated()), id: \.offset) { i, ns in
-                    HStack(spacing: 10) {
-                        lucide(store.vault?.namespaces.contains { $0.path == ns.path } == true ? "folder" : "folder-plus")
-                            .font(.system(size: 13)).foregroundStyle(t.ink3)
-                        Text(ns.path).font(.mono(12, .semibold)).foregroundStyle(t.ink).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
-                        namespaceBadge(ns.path)
-                        Text("\(ns.secrets.count)개").font(.sans(11.5)).foregroundStyle(t.ink3)
+            HStack(alignment: .top, spacing: 10) {
+                lucide("triangle-alert").font(.system(size: 14)).foregroundStyle(t.warn).padding(.top, 1)
+                Text(replaceWarning).font(.sans(12)).foregroundStyle(t.ink2).lineSpacing(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 9).fill(t.warnSoft))
+            .padding(.bottom, 10)
+            ScrollView {
+                VStack(spacing: 0) {
+                    let list = imPayload?.namespaces ?? []
+                    ForEach(Array(list.enumerated()), id: \.offset) { i, ns in
+                        HStack(spacing: 10) {
+                            lucide("folder").font(.system(size: 13)).foregroundStyle(t.ink3)
+                            Text(ns.path).font(.mono(12, .semibold)).foregroundStyle(t.ink)
+                                .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1).truncationMode(.middle)
+                            Text("\(ns.secrets.count)개").font(.sans(11.5)).foregroundStyle(t.ink3)
+                        }
+                        .padding(.horizontal, 12).frame(height: 32)
+                        .overlay(alignment: .bottom) { if i < list.count - 1 { Rectangle().fill(t.lineSoft).frame(height: 1) } }
                     }
-                    .padding(.horizontal, 12).frame(height: 32)
-                    .overlay(alignment: .bottom) { if i < (imPayload?.namespaces.count ?? 0) - 1 { Rectangle().fill(t.lineSoft).frame(height: 1) } }
                 }
             }
             .frame(maxHeight: 190).background(RoundedRectangle(cornerRadius: 9).strokeBorder(t.line, lineWidth: 1))
@@ -169,26 +173,18 @@ struct FullExportSheet: View {
         }
     }
 
-    private var importSummary: String {
+    private var replaceWarning: String {
         guard let p = imPayload else { return "" }
-        let existing = Set(store.vault?.namespaces.map { $0.path } ?? [])
-        let fresh = p.namespaces.filter { !existing.contains($0.path) }.count
-        let merged = p.namespaces.count - fresh
-        return "네임스페이스 \(p.namespaces.count)개, 시크릿 \(p.secretCount)개 · 신규 \(fresh)개, 병합 \(merged)개"
-    }
-
-    private func namespaceBadge(_ path: String) -> some View {
-        let exists = store.vault?.namespaces.contains { $0.path == path } ?? false
-        let (text, bg, fg): (String, Color, Color) = exists
-            ? ("병합", t.warnSoft, t.warn)
-            : ("신규", t.accentSoft, t.accentText)
-        return Text(text).font(.sans(11, .semibold)).foregroundStyle(fg).padding(.horizontal, 6).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 5).fill(bg))
+        let current = store.vault?.namespaces.count ?? 0
+        if current == 0 {
+            return "네임스페이스 \(p.namespaces.count)개, 시크릿 \(p.secretCount)개를 가져옵니다."
+        }
+        return "기존 네임스페이스 \(current)개는 모두 지워지고, 파일의 네임스페이스 \(p.namespaces.count)개와 시크릿 \(p.secretCount)개로 교체됩니다."
     }
 
     private var doneText: String {
         guard let r = imResult else { return "가져오는 중" }
-        return "네임스페이스 \(r.namespaces)개 추가, 시크릿 \(r.secrets)개 반영"
+        return "네임스페이스 \(r.namespaces)개, 시크릿 \(r.secrets)개로 교체했습니다"
     }
 
     // MARK: Footer
@@ -271,7 +267,7 @@ struct FullExportSheet: View {
     private func runImport() {
         guard let payload = imPayload else { return }
         do {
-            imResult = try store.applyFullImport(payload, policy: imPolicy)
+            imResult = try store.applyFullImport(payload)
             step = 2
         } catch { self.error = "가져오기에 실패했습니다." }
     }
